@@ -1,0 +1,7 @@
+[package]
+name = "kanna"
+version = "0.1.0"
+authors = ["Hiruna K. Jayamanne <hirunav2@gmail.com>"]
+edition = "2018"
+
+[dependencies]
