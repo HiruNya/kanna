@@ -1,7 +1,11 @@
 [package]
 name = "kanna"
 version = "0.1.0"
-authors = ["Hiruna K. Jayamanne <hirunav2@gmail.com>"]
+authors = [
+	"Hiruna K. Jayamanne <hirunav2@gmail.com>",
+	"Technocoder <8334328+Techno-coder@users.noreply.github.com>",
+]
 edition = "2018"
 
 [dependencies]
+ggez = "^0.5"
