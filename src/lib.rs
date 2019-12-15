@@ -11,7 +11,12 @@ pub struct Character(pub String);
 
 #[derive(Debug)]
 pub enum Command {
+	/// Displays text associated with a character.
 	Dialogue(Character, String),
+	/// Presents the user with a list of options and jumps to a label
+	/// depending on the option that is chosen.
+	Diverge(Vec<(String, Label)>),
+	/// Sets the background image.
 	Stage(PathBuf),
 }
 
@@ -24,16 +29,35 @@ impl Command {
 				let size = (width, height - settings.interface_margin);
 				let position = (settings.interface_margin, settings.height - height);
 				let text = RenderText::empty(string.clone(), settings.foreground_colour);
-				render.text = Some(TextBox::new(text, position, settings.background_colour)
-					.size(size).padding(settings.interface_margin));
+				render.text = Some(TextBox::new(text, position, size,
+					settings.background_colour).padding(settings.interface_margin));
 
 				let character_height = settings.height * settings.character_name_height;
 				let position = (settings.interface_margin, settings.height -
 					(height + settings.interface_margin + character_height));
 				let width = settings.width * settings.character_name_width - settings.interface_margin;
 				let text = RenderText::new(character.clone(), settings.foreground_colour);
-				render.character = Some(TextBox::new(text, position, settings.background_colour)
-					.size((width, character_height)).padding(settings.interface_margin))
+				render.character = Some(TextBox::new(text, position, (width, character_height),
+					settings.background_colour).padding(settings.interface_margin))
+			}
+			Command::Diverge(branches) => {
+				let button_height = settings.height * settings.branch_button_height;
+				let button_width = settings.width * settings.branch_button_width;
+				let position_x = (settings.width - button_width) / 2.0;
+
+				let size = (button_width, button_height);
+				let true_height = button_height + settings.interface_margin;
+				let mut position_y = (settings.height - branches.len() as f32 * true_height) / 2.0;
+
+				render.branches = branches.iter().map(|(string, label)| {
+					let text = RenderText::new(string.clone(), settings.foreground_colour);
+					let position = (position_x, position_y);
+					position_y += true_height;
+
+					(Button::new(TextBox::new(text, position, size, settings.background_colour)
+						.alignment(graphics::Align::Center).padding(settings.interface_margin),
+						settings.background_colour, settings.secondary_colour), label.clone())
+				}).collect();
 			}
 			Command::Stage(path) => render.background = Some(script.images[path].clone()),
 		}
@@ -50,17 +74,21 @@ impl Target {
 	}
 }
 
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct Label(pub String);
+
 #[derive(Debug)]
 pub struct Script {
 	pub commands: Vec<Command>,
+	pub labels: HashMap<Label, Target>,
 	pub images: HashMap<PathBuf, Image>,
 }
 
-impl Index<Target> for Script {
+impl Index<&Target> for Script {
 	type Output = Command;
 
-	fn index(&self, Target(index): Target) -> &Self::Output {
-		&self.commands[index]
+	fn index(&self, Target(index): &Target) -> &Self::Output {
+		&self.commands[*index]
 	}
 }
 
@@ -74,6 +102,7 @@ pub struct Render {
 	pub background: Option<Image>,
 	pub character: Option<TextBox>,
 	pub text: Option<TextBox>,
+	pub branches: Vec<(Button, Label)>,
 }
 
 #[derive(Debug)]
@@ -123,20 +152,16 @@ impl RenderText {
 #[derive(Debug)]
 pub struct TextBox {
 	pub text: RenderText,
-	pub colour: [f32; 4],
 	pub position: (f32, f32),
-	pub size: Option<(f32, f32)>,
+	pub size: (f32, f32),
+	pub colour: [f32; 4],
 	pub padding: f32,
+	pub alignment: graphics::Align,
 }
 
 impl TextBox {
-	pub fn new(text: RenderText, position: (f32, f32), colour: [f32; 4]) -> Self {
-		TextBox { text, colour, position, size: None, padding: 0.0 }
-	}
-
-	pub fn size(mut self, size: (f32, f32)) -> Self {
-		self.size = Some(size);
-		self
+	pub fn new(text: RenderText, position: (f32, f32), size: (f32, f32), colour: [f32; 4]) -> Self {
+		TextBox { text, position, size, colour, padding: 0.0, alignment: graphics::Align::Left }
 	}
 
 	pub fn padding(mut self, padding: f32) -> Self {
@@ -144,33 +169,28 @@ impl TextBox {
 		self
 	}
 
+	pub fn alignment(mut self, alignment: graphics::Align) -> Self {
+		self.alignment = alignment;
+		self
+	}
+
 	pub fn draw(&self, ctx: &mut ggez::Context) -> ggez::GameResult {
+		let rectangle = self.rectangle();
 		let fragment = self.text.fragment();
+		let text_box = graphics::Mesh::new_rectangle(ctx,
+			graphics::DrawMode::fill(), rectangle, self.colour.into())?;
+		graphics::draw(ctx, &text_box, graphics::DrawParam::new())?;
+
+		let bounds = [rectangle.w - 2.0 * self.padding, rectangle.h - 2.0 * self.padding];
+		let text_position = ([rectangle.x + self.padding, rectangle.y + self.padding], );
+		graphics::draw(ctx, graphics::Text::new(fragment)
+			.set_bounds(bounds, self.alignment), text_position)
+	}
+
+	fn rectangle(&self) -> graphics::Rect {
 		let (x, y) = self.position;
-		match self.size {
-			Some((width, height)) => {
-				let rectangle = [x, y, width, height].into();
-				let text_box = graphics::Mesh::new_rectangle(ctx,
-					graphics::DrawMode::fill(), rectangle, self.colour.into())?;
-				graphics::draw(ctx, &text_box, graphics::DrawParam::new())?;
-
-				let bounds = [width - 2.0 * self.padding, height - 2.0 * self.padding];
-				graphics::draw(ctx, graphics::Text::new(fragment).set_bounds(bounds,
-					graphics::Align::Left), ([x + self.padding, y + self.padding], ))
-			}
-			None => {
-				let text = graphics::Text::new(fragment);
-				let (width, height) = text.dimensions(ctx);
-				let width = width as f32 + 2.0 * self.padding;
-				let height = height as f32 + 2.0 * self.padding;
-
-				let rectangle = [x, y, width, height].into();
-				let text_box = graphics::Mesh::new_rectangle(ctx,
-					graphics::DrawMode::fill(), rectangle, self.colour.into())?;
-				graphics::draw(ctx, &text_box, graphics::DrawParam::new())?;
-				graphics::draw(ctx, &text, ([x + self.padding, y + self.padding], ))
-			}
-		}
+		let (width, height) = self.size;
+		[x, y, width, height].into()
 	}
 }
 
@@ -189,28 +209,62 @@ impl DerefMut for TextBox {
 }
 
 #[derive(Debug)]
+pub struct Button {
+	pub text: TextBox,
+	pub default: [f32; 4],
+	pub hover: [f32; 4],
+}
+
+impl Button {
+	pub fn new(text: TextBox, default: [f32; 4], hover: [f32; 4]) -> Self {
+		Button { text, default, hover }
+	}
+
+	pub fn update(&mut self, (x, y): (f32, f32)) {
+		match self.text.rectangle().contains([x, y]) {
+			false => self.text.colour = self.default,
+			true => self.text.colour = self.hover,
+		}
+	}
+}
+
+impl Deref for Button {
+	type Target = TextBox;
+
+	fn deref(&self) -> &Self::Target {
+		&self.text
+	}
+}
+
+#[derive(Debug)]
 pub struct Settings {
-	/// The width of the game window.
+	/// Width of the game window.
 	pub width: f32,
-	/// The height of the game window.
+	/// Height of the game window.
 	pub height: f32,
-	/// The rate at which characters are displayed.
+	/// Rate at which characters are displayed.
 	pub text_speed: u32,
-	/// The colour of background elements such as text boxes.
+	/// Colour of background elements such as text boxes.
 	pub background_colour: [f32; 4],
-	/// The colour of foreground elements such as text.
+	/// Colour of foreground elements such as text.
 	pub foreground_colour: [f32; 4],
-	/// The amount of pixels between interface elements and the game window.
+	/// Alternative colour for interface elements such as button hovers.
+	pub secondary_colour: [f32; 4],
+	/// Amount of pixels between interface elements and the game window.
 	pub interface_margin: f32,
-	/// The height of the main text box expressed as a multiplier of the window height.
+	/// Height of the main text box expressed as a multiplier of the window height.
 	/// `0.5` is exactly half of the window height.
 	pub text_box_height: f32,
-	/// The width of the character name expressed as a multiplier of the window width.
+	/// Width of the character name expressed as a multiplier of the window width.
 	/// `0.5` is exactly half of the window width.
 	pub character_name_width: f32,
-	/// The height of the character name expressed as a multiplier of the window height.
+	/// Height of the character name expressed as a multiplier of the window height.
 	/// `0.1` is exactly one tenth of the window height.
 	pub character_name_height: f32,
+	/// Width of each branch button expressed as a multiplier of the window width.
+	pub branch_button_width: f32,
+	/// Height of each branch button expressed as a multiplier of the window height.
+	pub branch_button_height: f32,
 	/// Paths to look for resource files.
 	pub resource_paths: Vec<String>,
 }
@@ -223,10 +277,13 @@ impl Default for Settings {
 			text_speed: 32,
 			background_colour: [0.8, 0.8, 0.8, 0.8],
 			foreground_colour: [0.0, 0.0, 0.0, 1.0],
+			secondary_colour: [0.5, 0.5, 0.5, 1.0],
 			interface_margin: 8.0,
 			text_box_height: 0.25,
 			character_name_width: 0.25,
 			character_name_height: 0.08,
+			branch_button_width: 0.3,
+			branch_button_height: 0.1,
 			resource_paths: Vec::new(),
 		}
 	}
