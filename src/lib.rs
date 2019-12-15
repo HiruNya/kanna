@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::ops::{Deref, DerefMut, Index, Range};
+use std::path::PathBuf;
 
-use ggez::graphics;
+use ggez::graphics::{self, Image};
 
 pub mod game;
 
@@ -10,10 +12,11 @@ pub struct Character(pub String);
 #[derive(Debug)]
 pub enum Command {
 	Dialogue(Character, String),
+	Stage(PathBuf),
 }
 
 impl Command {
-	pub fn execute(&self, _: &mut ScriptState, render: &mut Render, settings: &Settings) {
+	pub fn execute(&self, _: &mut ScriptState, render: &mut Render, script: &Script, settings: &Settings) {
 		match self {
 			Command::Dialogue(Character(character), string) => {
 				let height = settings.height * settings.text_box_height - settings.interface_margin;
@@ -30,8 +33,9 @@ impl Command {
 				let width = settings.width * settings.character_name_width - settings.interface_margin;
 				let text = RenderText::new(character.clone(), settings.foreground_colour);
 				render.character = Some(TextBox::new(text, position, settings.background_colour)
-					.size((width, character_height)).padding(settings.interface_margin));
+					.size((width, character_height)).padding(settings.interface_margin))
 			}
+			Command::Stage(path) => render.background = Some(script.images[path].clone()),
 		}
 	}
 }
@@ -49,6 +53,7 @@ impl Target {
 #[derive(Debug)]
 pub struct Script {
 	pub commands: Vec<Command>,
+	pub images: HashMap<PathBuf, Image>,
 }
 
 impl Index<Target> for Script {
@@ -66,8 +71,9 @@ pub struct ScriptState {
 
 #[derive(Debug, Default)]
 pub struct Render {
-	pub text: Option<TextBox>,
+	pub background: Option<Image>,
 	pub character: Option<TextBox>,
+	pub text: Option<TextBox>,
 }
 
 #[derive(Debug)]
@@ -205,6 +211,8 @@ pub struct Settings {
 	/// The height of the character name expressed as a multiplier of the window height.
 	/// `0.1` is exactly one tenth of the window height.
 	pub character_name_height: f32,
+	/// Paths to look for resource files.
+	pub resource_paths: Vec<String>,
 }
 
 impl Default for Settings {
@@ -219,6 +227,7 @@ impl Default for Settings {
 			text_box_height: 0.25,
 			character_name_width: 0.25,
 			character_name_height: 0.08,
+			resource_paths: Vec::new(),
 		}
 	}
 }
