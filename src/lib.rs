@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use ggez::graphics::{self, Image};
 
 pub mod game;
+pub mod parser;
+pub mod lexer;
 
 #[derive(Debug)]
 pub struct Character(pub String);
@@ -12,7 +14,7 @@ pub struct Character(pub String);
 #[derive(Debug)]
 pub enum Command {
 	/// Displays text associated with a character.
-	Dialogue(Character, String),
+	Dialogue(Option<Character>, String),
 	/// Presents the user with a list of options and jumps to a label
 	/// depending on the option that is chosen.
 	Diverge(Vec<(String, Label)>),
@@ -23,7 +25,7 @@ pub enum Command {
 impl Command {
 	pub fn execute(&self, _: &mut ScriptState, render: &mut Render, script: &Script, settings: &Settings) {
 		match self {
-			Command::Dialogue(Character(character), string) => {
+			Command::Dialogue(character, string) => {
 				let height = settings.height * settings.text_box_height - settings.interface_margin;
 				let width = settings.width - 2.0 * settings.interface_margin;
 				let size = (width, height - settings.interface_margin);
@@ -32,13 +34,15 @@ impl Command {
 				render.text = Some(TextBox::new(text, position, size,
 					settings.background_colour).padding(settings.interface_margin));
 
-				let character_height = settings.height * settings.character_name_height;
-				let position = (settings.interface_margin, settings.height -
-					(height + settings.interface_margin + character_height));
-				let width = settings.width * settings.character_name_width - settings.interface_margin;
-				let text = RenderText::new(character.clone(), settings.foreground_colour);
-				render.character = Some(TextBox::new(text, position, (width, character_height),
-					settings.background_colour).padding(settings.interface_margin))
+				if let Some(Character(character)) = character {
+					let character_height = settings.height * settings.character_name_height;
+					let position = (settings.interface_margin, settings.height -
+						(height + settings.interface_margin + character_height));
+					let width = settings.width * settings.character_name_width - settings.interface_margin;
+					let text = RenderText::new(character.clone(), settings.foreground_colour);
+					render.character = Some(TextBox::new(text, position, (width, character_height),
+						settings.background_colour).padding(settings.interface_margin))
+				}
 			}
 			Command::Diverge(branches) => {
 				let button_height = settings.height * settings.branch_button_height;
@@ -77,7 +81,7 @@ impl Target {
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Label(pub String);
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Script {
 	pub commands: Vec<Command>,
 	pub labels: HashMap<Label, Target>,
