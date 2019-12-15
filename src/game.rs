@@ -22,10 +22,13 @@ impl GameState {
 	pub fn advance(&mut self) {
 		match &mut self.render.text {
 			Some(text) if !text.is_finished() => text.finish(),
-			_ => {
-				self.state.target.advance();
-				self.jump(self.state.target.clone());
-			}
+			_ => match self.state.next_target.take() {
+				Some(target) => self.jump(target),
+				None => {
+					self.state.target.advance();
+					self.jump(self.state.target.clone())
+				}
+			},
 		}
 	}
 

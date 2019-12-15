@@ -20,10 +20,12 @@ pub enum Command {
 	Diverge(Vec<(String, Label)>),
 	/// Sets the background image.
 	Stage(PathBuf),
+	/// Jumps directly to a label.
+	Jump(Label),
 }
 
 impl Command {
-	pub fn execute(&self, _: &mut ScriptState, render: &mut Render, script: &Script, settings: &Settings) {
+	pub fn execute(&self, state: &mut ScriptState, render: &mut Render, script: &Script, settings: &Settings) {
 		match self {
 			Command::Dialogue(character, string) => {
 				let height = settings.height * settings.text_box_height - settings.interface_margin;
@@ -64,6 +66,7 @@ impl Command {
 				}).collect();
 			}
 			Command::Stage(path) => render.background = Some(script.images[path].clone()),
+			Command::Jump(label) => state.next_target = Some(script.labels[label].clone()),
 		}
 	}
 }
@@ -99,6 +102,7 @@ impl Index<&Target> for Script {
 #[derive(Debug, Default)]
 pub struct ScriptState {
 	pub target: Target,
+	pub next_target: Option<Target>,
 }
 
 #[derive(Debug, Default)]

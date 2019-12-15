@@ -1,4 +1,4 @@
-use crate::{Label, lexer::Lexer};
+use crate::{Label, lexer::Lexer, Target};
 
 use super::{Character, Command, Script};
 
@@ -61,6 +61,14 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 				lexer.expect(Token::Terminator).map_err(|error| (error, Token::Terminator))?;
 				lexer.expect(Token::ScopeOpen).map_err(|error| (error, Token::Terminator))?;
 				parse_diverge(lexer, script).map_err(|error| (error, Token::ScopeClose))?;
+			}
+			"label" => {
+				let label = lexer.identifier().map_err(|error| (error, Token::Terminator))?;
+				script.labels.insert(Label(label), Target(script.commands.len()));
+			}
+			"jump" => {
+				let label = lexer.identifier().map_err(|error| (error, Token::Terminator))?;
+				script.commands.push(Command::Jump(Label(label)));
 			}
 			_ => return Err((ParserError::InvalidCommand, Token::Terminator)),
 		}
