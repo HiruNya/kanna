@@ -39,6 +39,7 @@ impl event::EventHandler for GameState {
 	fn draw(&mut self, ctx: &mut ggez::Context) -> ggez::GameResult {
 		graphics::clear(ctx, graphics::BLACK);
 		self.render.text.as_ref().map(|text| text.draw(ctx)).transpose()?;
+		self.render.character.as_ref().map(|text| text.draw(ctx)).transpose()?;
 		graphics::present(ctx)?;
 		Ok(())
 	}

@@ -15,10 +15,22 @@ pub enum Command {
 impl Command {
 	pub fn execute(&self, _: &mut ScriptState, render: &mut Render, settings: &Settings) {
 		match self {
-			Command::Dialogue(_, string) => {
-				let text = RenderText::new(string.clone(), settings.foreground_colour);
-				render.text = Some(TextBox::new(text, (8.0, 8.0), settings.background_colour)
-					.size((settings.width - 16.0, settings.height - 16.0)).padding(8.0));
+			Command::Dialogue(Character(character), string) => {
+				let height = settings.height * settings.text_box_height - settings.interface_margin;
+				let width = settings.width - 2.0 * settings.interface_margin;
+				let size = (width, height - settings.interface_margin);
+				let position = (settings.interface_margin, settings.height - height);
+				let text = RenderText::empty(string.clone(), settings.foreground_colour);
+				render.text = Some(TextBox::new(text, position, settings.background_colour)
+					.size(size).padding(settings.interface_margin));
+
+				let character_height = settings.height * settings.character_name_height;
+				let position = (settings.interface_margin, settings.height -
+					(height + settings.interface_margin + character_height));
+				let width = settings.width * settings.character_name_width - settings.interface_margin;
+				let text = RenderText::new(character.clone(), settings.foreground_colour);
+				render.character = Some(TextBox::new(text, position, settings.background_colour)
+					.size((width, character_height)).padding(settings.interface_margin));
 			}
 		}
 	}
@@ -55,6 +67,7 @@ pub struct ScriptState {
 #[derive(Debug, Default)]
 pub struct Render {
 	pub text: Option<TextBox>,
+	pub character: Option<TextBox>,
 }
 
 #[derive(Debug)]
@@ -65,7 +78,14 @@ pub struct RenderText {
 }
 
 impl RenderText {
+	/// Creates a `RenderText` with all characters initially displayed.
 	pub fn new(string: String, colour: [f32; 4]) -> Self {
+		let slice = Range { start: 0, end: string.len() };
+		RenderText { string, slice, colour }
+	}
+
+	/// Creates a `RenderText` with no characters initially displayed.
+	pub fn empty(string: String, colour: [f32; 4]) -> Self {
 		let slice = Range { start: 0, end: 0 };
 		RenderText { string, slice, colour }
 	}
@@ -174,6 +194,17 @@ pub struct Settings {
 	pub background_colour: [f32; 4],
 	/// The colour of foreground elements such as text.
 	pub foreground_colour: [f32; 4],
+	/// The amount of pixels between interface elements and the game window.
+	pub interface_margin: f32,
+	/// The height of the main text box expressed as a multiplier of the window height.
+	/// `0.5` is exactly half of the window height.
+	pub text_box_height: f32,
+	/// The width of the character name expressed as a multiplier of the window width.
+	/// `0.5` is exactly half of the window width.
+	pub character_name_width: f32,
+	/// The height of the character name expressed as a multiplier of the window height.
+	/// `0.1` is exactly one tenth of the window height.
+	pub character_name_height: f32,
 }
 
 impl Default for Settings {
@@ -184,6 +215,10 @@ impl Default for Settings {
 			text_speed: 32,
 			background_colour: [0.8, 0.8, 0.8, 0.8],
 			foreground_colour: [0.0, 0.0, 0.0, 1.0],
+			interface_margin: 8.0,
+			text_box_height: 0.25,
+			character_name_width: 0.25,
+			character_name_height: 0.08,
 		}
 	}
 }
