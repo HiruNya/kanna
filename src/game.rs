@@ -46,6 +46,7 @@ impl event::EventHandler for GameState {
 		graphics::clear(ctx, graphics::BLACK);
 		self.render.background.as_ref().map(|image| graphics::draw(ctx,
 			image, graphics::DrawParam::new())).transpose()?;
+		self.render.stage.draw(ctx)?;
 		self.render.character.as_ref().map(|text| text.draw(ctx)).transpose()?;
 		self.render.text.as_ref().map(|text| text.draw(ctx)).transpose()?;
 		self.render.branches.iter().try_for_each(|(button, _)| button.draw(ctx))?;
@@ -98,7 +99,8 @@ pub fn run(mut script: Script, settings: Settings) -> ggez::GameResult {
 }
 
 pub fn load_images(ctx: &mut ggez::Context, script: &mut Script) -> ggez::GameResult {
-	Ok(for command in &script.commands {
+	script.characters.load_images(&mut script.images, ctx)?;
+	for command in &script.commands {
 		match command {
 			Command::Stage(path) => {
 				let image = graphics::Image::new(ctx, path)?;
@@ -106,5 +108,6 @@ pub fn load_images(ctx: &mut ggez::Context, script: &mut Script) -> ggez::GameRe
 			}
 			_ => (),
 		}
-	})
+	};
+	Ok(())
 }

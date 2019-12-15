@@ -16,6 +16,9 @@ pub enum Command {
 	/// Presents the user with a list of options and jumps to a label
 	/// depending on the option that is chosen.
 	Diverge(Vec<(String, Label)>),
+	/// Creates an instance of a character onto the screen.
+	/// Consists of the Character, State, Position, and Instance.
+	Spawn(String, String, Option<(f32, f32)>, Option<String>),
 	/// Sets the background image.
 	Stage(PathBuf),
 }
@@ -59,6 +62,12 @@ impl Command {
 						settings.background_colour, settings.secondary_colour), label.clone())
 				}).collect();
 			}
+			Command::Spawn(character, state, pos, instance_name) => {
+				let pos = pos.unwrap_or((0., 0.));
+				let instance = Instance::new(script.characters.get(character, state), pos, script); 
+				let character = instance_name.as_ref().unwrap_or_else(|| character).clone();
+				render.stage.spawn(character, instance);
+			}
 			Command::Stage(path) => render.background = Some(script.images[path].clone()),
 		}
 	}
@@ -79,6 +88,7 @@ pub struct Label(pub String);
 
 #[derive(Debug)]
 pub struct Script {
+	pub characters: Characters,
 	pub commands: Vec<Command>,
 	pub labels: HashMap<Label, Target>,
 	pub images: HashMap<PathBuf, Image>,
@@ -100,6 +110,7 @@ pub struct ScriptState {
 #[derive(Debug, Default)]
 pub struct Render {
 	pub background: Option<Image>,
+	pub stage: Stage,
 	pub character: Option<TextBox>,
 	pub text: Option<TextBox>,
 	pub branches: Vec<(Button, Label)>,
@@ -286,5 +297,103 @@ impl Default for Settings {
 			branch_button_height: 0.1,
 			resource_paths: Vec::new(),
 		}
+	}
+}
+
+#[derive(Clone, Debug)]
+pub struct State {
+	centre_pos: Option<(u16, u16)>,
+	image: PathBuf,
+}
+impl State {
+	pub fn new<P: Into<PathBuf>>(path: P) -> Self {
+		Self {
+			image: path.into(),
+			centre_pos: None,
+		}
+	}
+	pub fn centre_pos(mut self, x: u16, y: u16) -> Self {
+		self.centre_pos = Some((x, y));
+		self
+	}
+}
+
+#[derive(Debug)]
+pub struct Instance {
+	centre_pos: (f32, f32),
+	pub image: Image,
+	pub pos: (f32, f32),
+	pub draw_params: graphics::DrawParam,
+}
+impl Instance {
+	fn new(state: State, pos: (f32, f32), script: &Script) -> Self {
+		let image = script.images.get(&state.image)
+			.unwrap_or_else(|| panic!("Could not find image at path: {:?}.", &state.image))
+			.clone();
+		let mut centre_pos = state.centre_pos;
+		if centre_pos.is_none() {
+			let x = image.width() / 2;
+			let y = image.height() / 2;
+			centre_pos = Some((x, y))
+		}
+		let centre_pos = centre_pos.unwrap();
+		let centre_pos = (centre_pos.0 as f32, centre_pos.1 as f32);
+		let x = pos.0 - centre_pos.0;
+		let y = pos.1 - centre_pos.1;
+		let draw_params = graphics::DrawParam::new().dest([x, y]);
+		Instance {
+			centre_pos,
+			image,
+			pos,
+			draw_params,
+		}
+	}
+	pub fn set_pos(&mut self, x: f32, y: f32) {
+		self.pos = (x, y);
+		let x = self.pos.0 - self.centre_pos.0;
+		let y = self.pos.1 - self.centre_pos.1;
+		self.draw_params = self.draw_params.dest([x, y]);
+	}
+	fn draw(&self, ctx: &mut ggez::Context) -> ggez::GameResult {
+		graphics::draw(ctx, &self.image, self.draw_params)
+	}
+}
+
+#[derive(Debug, Default)]
+pub struct Stage(pub HashMap<String, Instance>);
+impl Stage {
+	pub fn draw(&self, ctx: &mut ggez::Context) -> ggez::GameResult {
+		self.0.values()
+			.map(|v| v.draw(ctx))
+			.collect()
+	}
+	pub fn spawn(&mut self, name: String, instance: Instance) {
+		self.0.insert(name, instance);
+	}
+}
+
+#[derive(Debug, Default)]
+pub struct Characters(HashMap<String, HashMap<String, State>>);
+impl Characters {
+	pub fn add_character<S: Into<String>>(&mut self, name: S, states: HashMap<S, State>) {
+		let states = states.into_iter()
+			.map(|(k, v)| (k.into(), v))
+			.collect::<HashMap<String, State>>();
+		self.0.insert(name.into(), states);
+	}
+	pub fn load_images(&self, images: &mut HashMap<PathBuf, Image>, ctx: &mut ggez::Context) -> ggez::GameResult {
+		let state_images = self.0.values()
+			.map(|characters| characters.values())
+			.flatten()
+			.map(|state| Ok((state.image.clone(), Image::new(ctx, state.image.clone())?)))
+			.collect::<ggez::GameResult<HashMap<PathBuf, Image>>>()?
+			.into_iter();
+		images.extend(state_images);
+		Ok(())
+	}
+	pub fn get(&self, character: &String, state: &String) -> State {
+		let state_map = self.0.get(character).unwrap_or_else(|| panic!("Could not find Character: {}", character));
+		let state = state_map.get(state).unwrap_or_else(|| panic!("Could not find State: {}", state)).clone();
+		state
 	}
 }

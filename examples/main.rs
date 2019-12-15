@@ -5,10 +5,17 @@ use kanna::*;
 pub fn main() -> ggez::GameResult {
 	let mut settings = Settings::default();
 	settings.resource_paths.push(env!("CARGO_MANIFEST_DIR").to_owned() + "/examples/resources");
+	let mut characters = Characters::default();
+	characters.add_character("Character", {
+		let mut states = HashMap::new();
+		states.insert("Happy".into(), State::new("/character-happy.png"));
+		states
+	});
 
 	let script = Script {
 		commands: vec![
 			Command::Dialogue(Character("John Wick".into()), "John Wick needs your credit card number and the three digits on the back so he can win this epic victory and take home the bread.".into()),
+			Command::Spawn("Character".into(), "Happy".into(), None, None),
 			Command::Dialogue(Character("Bruh Moment".into()), "Hi, this is a bruh moment.".into()),
 			Command::Stage("/background.jpg".into()),
 			Command::Diverge(vec![
@@ -25,6 +32,7 @@ pub fn main() -> ggez::GameResult {
 			labels
 		},
 		images: HashMap::new(),
+		characters,
 	};
 
 	kanna::game::run(script, settings)
