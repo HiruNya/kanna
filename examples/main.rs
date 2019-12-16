@@ -8,14 +8,18 @@ pub fn main() -> ggez::GameResult {
 	let mut characters = Characters::default();
 	characters.add_character("Character", {
 		let mut states = HashMap::new();
-		states.insert("Happy".into(), State::new("/character-happy.png"));
+		states.insert("Happy".into(), State::new("/character-happy.png").scale(0.5, 0.5));
+		states.insert("Sad".into(), State::new("/character-sad.png").scale(0.5, 0.5));
 		states
 	});
 
 	let script = Script {
 		commands: vec![
 			Command::Dialogue(Character("John Wick".into()), "John Wick needs your credit card number and the three digits on the back so he can win this epic victory and take home the bread.".into()),
-			Command::Spawn("Character".into(), "Happy".into(), None, None),
+			Command::Spawn("Character".into(), "Happy".into(), (320., 240.).into(), None),
+			Command::Position("Character".into(), 540., 240.),
+			Command::Change("Character".into(), "Sad".into()),
+			Command::Kill("Character".into()),
 			Command::Dialogue(Character("Bruh Moment".into()), "Hi, this is a bruh moment.".into()),
 			Command::Stage("/background.jpg".into()),
 			Command::Diverge(vec![
@@ -27,8 +31,8 @@ pub fn main() -> ggez::GameResult {
 		],
 		labels: {
 			let mut labels = HashMap::new();
-			labels.insert(Label("bruh-moment-sigh".into()), Target(4));
-			labels.insert(Label("bruh-moment-rest".into()), Target(5));
+			labels.insert(Label("bruh-moment-sigh".into()), Target(8));
+			labels.insert(Label("bruh-moment-rest".into()), Target(9));
 			labels
 		},
 		images: HashMap::new(),

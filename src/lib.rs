@@ -11,11 +11,18 @@ pub struct Character(pub String);
 
 #[derive(Debug)]
 pub enum Command {
+	/// Changes the state of an instance.
+	/// Consists of the Instance and new State.
+	Change(String, String),
 	/// Displays text associated with a character.
 	Dialogue(Character, String),
 	/// Presents the user with a list of options and jumps to a label
 	/// depending on the option that is chosen.
 	Diverge(Vec<(String, Label)>),
+	/// Kills an instance.
+	Kill(String),
+	/// Sets the position of an instance.
+	Position(String, f32, f32),
 	/// Creates an instance of a character onto the screen.
 	/// Consists of the Character, State, Position, and Instance.
 	Spawn(String, String, Option<(f32, f32)>, Option<String>),
@@ -26,6 +33,12 @@ pub enum Command {
 impl Command {
 	pub fn execute(&self, _: &mut ScriptState, render: &mut Render, script: &Script, settings: &Settings) {
 		match self {
+			Command::Change(instance, state) => {
+				let instance = render.stage.0.get_mut(instance).expect("Error getting instance.");
+				let state = script.characters.get(&instance.character, state);
+				let new_instance = Instance::new(instance.character.clone(), state, instance.position, script);
+				*instance = new_instance;
+			}
 			Command::Dialogue(Character(character), string) => {
 				let height = settings.height * settings.text_box_height - settings.interface_margin;
 				let width = settings.width - 2.0 * settings.interface_margin;
@@ -62,9 +75,16 @@ impl Command {
 						settings.background_colour, settings.secondary_colour), label.clone())
 				}).collect();
 			}
-			Command::Spawn(character, state, pos, instance_name) => {
-				let pos = pos.unwrap_or((0., 0.));
-				let instance = Instance::new(script.characters.get(character, state), pos, script); 
+			Command::Position(instance, x, y) => {
+				let instance = render.stage.0.get_mut(instance).expect("Error getting instance.");
+				instance.position = (*x, *y);
+			}
+			Command::Kill(instance) => {
+				render.stage.0.remove(instance);
+			}
+			Command::Spawn(character, state, position, instance_name) => {
+				let position = position.unwrap_or((0., 0.));
+				let instance = Instance::new(character.clone(), script.characters.get(character, state), position, script); 
 				let character = instance_name.as_ref().unwrap_or_else(|| character).clone();
 				render.stage.spawn(character, instance);
 			}
@@ -302,60 +322,64 @@ impl Default for Settings {
 
 #[derive(Clone, Debug)]
 pub struct State {
-	centre_pos: Option<(u16, u16)>,
+	centre_position: Option<(u16, u16)>,
 	image: PathBuf,
+	scale: Option<(f32, f32)>,
 }
 impl State {
 	pub fn new<P: Into<PathBuf>>(path: P) -> Self {
 		Self {
 			image: path.into(),
-			centre_pos: None,
+			centre_position: None,
+			scale: None,
 		}
 	}
-	pub fn centre_pos(mut self, x: u16, y: u16) -> Self {
-		self.centre_pos = Some((x, y));
+	pub fn centre_position(mut self, x: u16, y: u16) -> Self {
+		self.centre_position = Some((x, y));
+		self
+	}
+	pub fn scale(mut self, x: f32, y: f32) -> Self {
+		self.scale = Some((x, y));
 		self
 	}
 }
 
 #[derive(Debug)]
 pub struct Instance {
-	centre_pos: (f32, f32),
+	pub character: String,
+	pub centre_position: (f32, f32),
 	pub image: Image,
-	pub pos: (f32, f32),
-	pub draw_params: graphics::DrawParam,
+	pub position: (f32, f32),
+	pub scale: (f32, f32),
 }
 impl Instance {
-	fn new(state: State, pos: (f32, f32), script: &Script) -> Self {
+	fn new(character: String, state: State, position: (f32, f32), script: &Script) -> Self {
 		let image = script.images.get(&state.image)
 			.unwrap_or_else(|| panic!("Could not find image at path: {:?}.", &state.image))
 			.clone();
-		let mut centre_pos = state.centre_pos;
-		if centre_pos.is_none() {
+		let centre_position = state.centre_position.unwrap_or_else(||{
 			let x = image.width() / 2;
 			let y = image.height() / 2;
-			centre_pos = Some((x, y))
-		}
-		let centre_pos = centre_pos.unwrap();
-		let centre_pos = (centre_pos.0 as f32, centre_pos.1 as f32);
-		let x = pos.0 - centre_pos.0;
-		let y = pos.1 - centre_pos.1;
-		let draw_params = graphics::DrawParam::new().dest([x, y]);
+			(x, y)
+		});
+		let centre_position = (centre_position.0 as f32, centre_position.1 as f32);
+		let scale = state.scale.unwrap_or((1., 1.));
 		Instance {
-			centre_pos,
+			character,
+			centre_position,
 			image,
-			pos,
-			draw_params,
+			position,
+			scale,
 		}
-	}
-	pub fn set_pos(&mut self, x: f32, y: f32) {
-		self.pos = (x, y);
-		let x = self.pos.0 - self.centre_pos.0;
-		let y = self.pos.1 - self.centre_pos.1;
-		self.draw_params = self.draw_params.dest([x, y]);
 	}
 	fn draw(&self, ctx: &mut ggez::Context) -> ggez::GameResult {
-		graphics::draw(ctx, &self.image, self.draw_params)
+		let offset_x = self.centre_position.0 / (self.image.width() as f32);
+		let offset_y = self.centre_position.1 / (self.image.height() as f32);
+		let draw_params = graphics::DrawParam::new()
+			.dest([self.position.0, self.position.1])
+			.offset([offset_x, offset_y])
+			.scale([self.scale.0, self.scale.1]);
+		graphics::draw(ctx, &self.image, draw_params)
 	}
 }
 
