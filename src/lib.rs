@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::ops::{Deref, DerefMut, Index, Range};
+use std::ops::{Deref, DerefMut, Index, IndexMut, Range};
 use std::path::PathBuf;
 
 use ggez::audio::{SoundData, SoundSource, Source};
@@ -9,16 +9,35 @@ pub mod game;
 pub mod parser;
 pub mod lexer;
 
-#[derive(Debug)]
-pub struct Character(pub String);
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct CharacterName(pub String);
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct InstanceName(pub String);
+
+#[derive(Debug, Hash, Eq, PartialEq)]
+pub struct StateName(pub String);
 
 #[derive(Debug)]
 pub enum Command {
+	/// Changes the state of an instance.
+	Change(InstanceName, StateName),
 	/// Displays text associated with a character.
-	Dialogue(Option<Character>, String),
+	Dialogue(Option<CharacterName>, String),
 	/// Presents the user with a list of options and jumps to a label
 	/// depending on the option that is chosen.
 	Diverge(Vec<(String, Label)>),
+	/// Makes an instance visible.
+	Show(InstanceName),
+	/// Makes an instance invisible.
+	Hide(InstanceName),
+	/// Sets the position of an instance.
+	Position(InstanceName, (f32, f32)),
+	/// Kills an instance.
+	Kill(InstanceName),
+	/// Creates an instance of a character onto the screen at a specified position.
+	/// If no instance name is specified, the character name is used.
+	Spawn(CharacterName, StateName, (f32, f32), Option<InstanceName>),
 	/// Sets the background image.
 	Stage(PathBuf),
 	/// Jumps directly to a label.
@@ -33,6 +52,11 @@ impl Command {
 	pub fn execute(&self, ctx: &mut ggez::Context, state: &mut ScriptState,
 	               render: &mut Render, script: &Script, settings: &Settings) {
 		match self {
+			Command::Change(instance, state) => {
+				let instance = &mut render.stage[instance];
+				*instance = Instance::new(script, instance.character.clone(),
+					state, instance.position);
+			}
 			Command::Dialogue(character, string) => {
 				let height = settings.height * settings.text_box_height - settings.interface_margin;
 				let width = settings.width - 2.0 * settings.interface_margin;
@@ -42,7 +66,7 @@ impl Command {
 				render.text = Some(TextBox::new(text, position, size,
 					settings.background_colour).padding(settings.interface_margin));
 
-				if let Some(Character(character)) = character {
+				if let Some(CharacterName(character)) = character {
 					let character_height = settings.height * settings.character_name_height;
 					let position = (settings.interface_margin, settings.height -
 						(height + settings.interface_margin + character_height));
@@ -70,6 +94,16 @@ impl Command {
 						.alignment(graphics::Align::Center).padding(settings.interface_margin),
 						settings.background_colour, settings.secondary_colour), label.clone())
 				}).collect();
+			}
+			Command::Show(instance) => render.stage[instance].visible = true,
+			Command::Hide(instance) => render.stage[instance].visible = false,
+			Command::Position(instance, position) => render.stage[instance].position = *position,
+			Command::Kill(instance) => render.stage.remove(instance),
+			Command::Spawn(character, state, position, instance_name) => {
+				let CharacterName(character_name) = character;
+				let instance = Instance::new(script, character.clone(), state, *position);
+				render.stage.spawn(instance_name.clone().unwrap_or_else(||
+					InstanceName(character_name.clone())), instance);
 			}
 			Command::Stage(path) => render.background = Some(script.images[path].clone()),
 			Command::Jump(label) => state.next_target = Some(script.labels[label].clone()),
@@ -105,6 +139,7 @@ pub struct Label(pub String);
 
 #[derive(Debug, Default)]
 pub struct Script {
+	pub characters: Characters,
 	pub commands: Vec<Command>,
 	pub labels: HashMap<Label, Target>,
 	pub images: HashMap<PathBuf, Image>,
@@ -130,6 +165,7 @@ pub struct ScriptState {
 #[derive(Debug, Default)]
 pub struct Render {
 	pub background: Option<Image>,
+	pub stage: Stage,
 	pub character: Option<TextBox>,
 	pub text: Option<TextBox>,
 	pub branches: Vec<(Button, Label)>,
@@ -323,5 +359,152 @@ impl Default for Settings {
 			music_volume: 1.0,
 			sound_volume: 1.0,
 		}
+	}
+}
+
+/// A state represents a possible character image.
+#[derive(Clone, Debug)]
+pub struct State {
+	/// Path to the image.
+	pub image: PathBuf,
+	/// Centre of the image in pixels.
+	/// This is used when the image sets its position, is scaled, or is rotated.
+	/// If no position is specified then the pixel centre of the image is used.
+	pub centre_position: Option<(u16, u16)>,
+	/// Amount this image is to be scaled by.
+	/// Default is `(1.0, 1.0)` (normal size).
+	pub scale: (f32, f32),
+}
+
+impl State {
+	/// Creates a new state from the path to the image.
+	pub fn new<P: Into<PathBuf>>(path: P) -> Self {
+		Self {
+			image: path.into(),
+			centre_position: None,
+			scale: (1.0, 1.0),
+		}
+	}
+
+	/// Sets the centre of the image in pixels.
+	pub fn centre_position(mut self, (x, y): (u16, u16)) -> Self {
+		self.centre_position = Some((x, y));
+		self
+	}
+
+	/// Sets the scaling of the image.
+	pub fn scale(mut self, (x, y): (f32, f32)) -> Self {
+		self.scale = (x, y);
+		self
+	}
+}
+
+/// A character that has been spawned onto the screen.
+#[derive(Debug)]
+pub struct Instance {
+	/// Character which this instance belongs to.
+	pub character: CharacterName,
+	/// Position of the image centre in pixels.
+	/// This determines the centre of rotation and scaling.
+	pub centre_position: (f32, f32),
+	/// Image that this instance draws to the screen.
+	pub image: Image,
+	/// Position on the screen in pixels.
+	pub position: (f32, f32),
+	/// Amount the image is scaled by.
+	pub scale: (f32, f32),
+	/// Whether the instance is visible.
+	pub visible: bool,
+}
+
+impl Instance {
+	/// Creates a new instance.
+	fn new(script: &Script, character: CharacterName, state: &StateName, position: (f32, f32)) -> Self {
+		let state = &script.characters[(&character, state)];
+		let image = script.images.get(&state.image).unwrap_or_else(||
+			panic!("Image at path: {:?}, is not loaded", &state.image)).clone();
+		let centre_position = state.centre_position.map(|(x, y)| (x as f32, y as f32))
+			.unwrap_or_else(|| (image.width() as f32 / 2.0, image.height() as f32 / 2.0));
+		Instance { character, centre_position, image, position, scale: state.scale, visible: true }
+	}
+
+	/// Draws the instance to the screen.
+	fn draw(&self, ctx: &mut ggez::Context) -> ggez::GameResult {
+		let (centre_x, centre_y) = self.centre_position;
+		let offset_x = centre_x / self.image.width() as f32;
+		let offset_y = centre_y / self.image.height() as f32;
+
+		let (scale_x, scale_y) = self.scale;
+		let (position_x, position_y) = self.position;
+		let draw_params = graphics::DrawParam::new()
+			.dest([position_x, position_y])
+			.offset([offset_x, offset_y])
+			.scale([scale_x, scale_y]);
+		graphics::draw(ctx, &self.image, draw_params)
+	}
+}
+
+/// Holds all the current instances.
+#[derive(Debug, Default)]
+pub struct Stage(pub HashMap<InstanceName, Instance>);
+
+impl Stage {
+	/// Draws all the instances it contains.
+	pub fn draw(&self, ctx: &mut ggez::Context) -> ggez::GameResult {
+		let Stage(stage) = self;
+		stage.values().filter(|instance| instance.visible)
+			.map(|instance| instance.draw(ctx)).collect()
+	}
+
+	/// Spawns a new instance onto the stage.
+	pub fn spawn(&mut self, name: InstanceName, instance: Instance) {
+		let Stage(stage) = self;
+		stage.insert(name, instance);
+	}
+
+	/// Removes an instance from the stage.
+	pub fn remove(&mut self, name: &InstanceName) {
+		let Stage(stage) = self;
+		stage.remove(name);
+	}
+}
+
+impl Index<&InstanceName> for Stage {
+	type Output = Instance;
+
+	fn index(&self, index: &InstanceName) -> &Self::Output {
+		let Stage(stage) = self;
+		stage.get(index).unwrap_or_else(||
+			panic!("Instance: {:?}, does not exist in stage", index))
+	}
+}
+
+impl IndexMut<&InstanceName> for Stage {
+	fn index_mut(&mut self, index: &InstanceName) -> &mut Self::Output {
+		let Stage(stage) = self;
+		stage.get_mut(index).unwrap_or_else(||
+			panic!("Instance: {:?}, does not exist in stage", index))
+	}
+}
+
+/// Holds all the characters and their respective states.
+#[derive(Debug, Default)]
+pub struct Characters(pub HashMap<CharacterName, HashMap<StateName, State>>);
+
+impl Characters {
+	/// Adds a character with a map of its states.
+	pub fn insert(&mut self, name: CharacterName, states: HashMap<StateName, State>) {
+		let Characters(characters) = self;
+		characters.insert(name, states);
+	}
+}
+
+impl Index<(&CharacterName, &StateName)> for Characters {
+	type Output = State;
+
+	fn index(&self, (character, state): (&CharacterName, &StateName)) -> &Self::Output {
+		let Characters(characters) = self;
+		characters.get(character).unwrap_or_else(|| panic!("Character: {:?}, does not exist in map", character))
+			.get(state).unwrap_or_else(|| panic!("State: {:?}, does not exist for character: {:?}", state, character))
 	}
 }

@@ -1,6 +1,6 @@
 use crate::{Label, lexer::Lexer, Target};
 
-use super::{Character, Command, Script};
+use super::{CharacterName, Command, Script};
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
@@ -84,7 +84,7 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			Some(Token::Terminator) =>
 				script.commands.push(Command::Dialogue(None, string)),
 			Some(Token::String(dialogue)) => {
-				let character = Some(Character(string));
+				let character = Some(CharacterName(string));
 				script.commands.push(Command::Dialogue(character, dialogue));
 				lexer.expect(Token::Terminator).map_err(|error| (error, Token::Terminator))?;
 			}
