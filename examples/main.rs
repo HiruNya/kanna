@@ -8,10 +8,11 @@ pub fn main() -> ggez::GameResult {
 "John Wick" "John Wick needs your credit card number and the three digits on the back"
 "so he can win this epic victory and take home the bread."
 "Bruh Moment" "Hi, this is a bruh moment."
+sound "/sound.ogg"
 stage "/background.jpg"
 
 diverge
-	"Sign" bruh-moment-sigh
+	"Sigh" bruh-moment-sigh
 	"Rest" bruh-moment-rest
 label bruh-moment-sigh
 "Don't sigh me!"
@@ -22,6 +23,7 @@ label bruh-moment-rest
 jump bruh-moment-end
 
 label bruh-moment-end
+music "/music.ogg"
 "The weather sure is nice today."
 	"#;
 

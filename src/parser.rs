@@ -70,6 +70,14 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 				let label = lexer.identifier().map_err(|error| (error, Token::Terminator))?;
 				script.commands.push(Command::Jump(Label(label)));
 			}
+			"music" => {
+				let path = lexer.string().map_err(|error| (error, Token::Terminator))?;
+				script.commands.push(Command::Music(path.into()));
+			}
+			"sound" => {
+				let path = lexer.string().map_err(|error| (error, Token::Terminator))?;
+				script.commands.push(Command::Sound(path.into()));
+			}
 			_ => return Err((ParserError::InvalidCommand, Token::Terminator)),
 		}
 		Token::String(string) => match lexer.token().map_err(|error| (error, Token::Terminator))? {

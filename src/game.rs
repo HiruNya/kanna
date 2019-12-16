@@ -1,4 +1,4 @@
-use ggez::{self, Context, event, graphics, input};
+use ggez::{self, audio, event, graphics, input};
 
 use super::*;
 
@@ -11,37 +11,37 @@ pub struct GameState {
 }
 
 impl GameState {
-	pub fn new(script: Script, settings: Settings) -> Self {
-		let mut render = Render::default();
-		let mut state = ScriptState::default();
-		script[&state.target].execute(&mut state,
-			&mut render, &script, &settings);
+	pub fn new(ctx: &mut ggez::Context, script: Script, settings: Settings) -> Self {
+		let (mut state, mut render) = (ScriptState::default(), Render::default());
+		script[&state.target].execute(ctx, &mut state, &mut render, &script, &settings);
 		GameState { script, settings, state, render }
 	}
 
-	pub fn advance(&mut self) {
+	pub fn advance(&mut self, ctx: &mut ggez::Context) {
 		match &mut self.render.text {
 			Some(text) if !text.is_finished() => text.finish(),
 			_ => match self.state.next_target.take() {
-				Some(target) => self.jump(target),
+				Some(target) => self.jump(ctx, target),
 				None => {
 					self.state.target.advance();
-					self.jump(self.state.target.clone())
+					self.jump(ctx, self.state.target.clone())
 				}
 			},
 		}
 	}
 
-	pub fn jump(&mut self, target: Target) {
+	pub fn jump(&mut self, ctx: &mut ggez::Context, target: Target) {
 		self.state.target = target;
-		self.script[&self.state.target].execute(&mut self.state,
+		self.script[&self.state.target].execute(ctx, &mut self.state,
 			&mut self.render, &self.script, &self.settings)
 	}
 }
 
 impl event::EventHandler for GameState {
 	fn update(&mut self, ctx: &mut ggez::Context) -> ggez::GameResult {
-		rate(ctx, self.settings.text_speed, |_| Ok(self.render.text.as_mut().map(|text| text.step())))?;
+		rate(ctx, self.settings.text_speed, |_|
+			Ok(self.render.text.as_mut().map(|text| text.step())))?;
+		self.state.sounds.retain(Source::playing);
 		Ok(())
 	}
 
@@ -55,7 +55,7 @@ impl event::EventHandler for GameState {
 		graphics::present(ctx)
 	}
 
-	fn mouse_button_down_event(&mut self, _: &mut ggez::Context,
+	fn mouse_button_down_event(&mut self, ctx: &mut ggez::Context,
 	                           _: input::mouse::MouseButton, x: f32, y: f32) {
 		match self.script[&self.state.target] {
 			Command::Diverge(_) => {
@@ -63,16 +63,16 @@ impl event::EventHandler for GameState {
 					if button.rectangle().contains([x, y]) {
 						let target = self.script.labels[&label].clone();
 						self.render.branches.clear();
-						self.jump(target);
+						self.jump(ctx, target);
 						return;
 					}
 				}
 			}
-			_ => self.advance(),
+			_ => self.advance(ctx),
 		}
 	}
 
-	fn mouse_motion_event(&mut self, _: &mut Context, x: f32, y: f32, _: f32, _: f32) {
+	fn mouse_motion_event(&mut self, _: &mut ggez::Context, x: f32, y: f32, _: f32, _: f32) {
 		self.render.branches.iter_mut().for_each(|(button, _)| button.update((x, y)));
 	}
 }
@@ -94,9 +94,11 @@ pub fn run(mut script: Script, settings: Settings) -> ggez::GameResult {
 	let (ctx, event_loop) = &mut ctx.build()?;
 	settings.resource_paths.iter().map(std::path::PathBuf::from)
 		.for_each(|path| ggez::filesystem::mount(ctx, path.as_path(), true));
-	load_images(ctx, &mut script)?;
 
-	let state = &mut GameState::new(script, settings);
+	load_images(ctx, &mut script)?;
+	load_audio(ctx, &mut script)?;
+
+	let state = &mut GameState::new(ctx, script, settings);
 	event::run(ctx, event_loop, state)
 }
 
@@ -106,6 +108,18 @@ pub fn load_images(ctx: &mut ggez::Context, script: &mut Script) -> ggez::GameRe
 			Command::Stage(path) => {
 				let image = graphics::Image::new(ctx, path)?;
 				script.images.insert(path.clone(), image);
+			}
+			_ => (),
+		}
+	})
+}
+
+pub fn load_audio(ctx: &mut ggez::Context, script: &mut Script) -> ggez::GameResult {
+	Ok(for command in &script.commands {
+		match command {
+			Command::Music(path) | Command::Sound(path) => {
+				let audio = audio::SoundData::new(ctx, path)?;
+				script.audio.insert(path.clone(), audio);
 			}
 			_ => (),
 		}

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut, Index, Range};
 use std::path::PathBuf;
 
+use ggez::audio::{SoundData, SoundSource, Source};
 use ggez::graphics::{self, Image};
 
 pub mod game;
@@ -22,10 +23,15 @@ pub enum Command {
 	Stage(PathBuf),
 	/// Jumps directly to a label.
 	Jump(Label),
+	/// Sets the currently playing music. Music audio is repeated.
+	Music(PathBuf),
+	/// Plays a sound effect.
+	Sound(PathBuf),
 }
 
 impl Command {
-	pub fn execute(&self, state: &mut ScriptState, render: &mut Render, script: &Script, settings: &Settings) {
+	pub fn execute(&self, ctx: &mut ggez::Context, state: &mut ScriptState,
+	               render: &mut Render, script: &Script, settings: &Settings) {
 		match self {
 			Command::Dialogue(character, string) => {
 				let height = settings.height * settings.text_box_height - settings.interface_margin;
@@ -67,6 +73,19 @@ impl Command {
 			}
 			Command::Stage(path) => render.background = Some(script.images[path].clone()),
 			Command::Jump(label) => state.next_target = Some(script.labels[label].clone()),
+			Command::Music(path) => {
+				let mut source = Source::from_data(ctx, script.audio[path].clone());
+				source.iter_mut().for_each(|source| source.set_volume(settings.music_volume));
+				source.iter_mut().for_each(|source| source.set_repeat(true));
+				source.iter_mut().try_for_each(Source::play).unwrap();
+				state.music = Some(source.unwrap());
+			}
+			Command::Sound(path) => {
+				let mut source = Source::from_data(ctx, script.audio[path].clone());
+				source.iter_mut().for_each(|source| source.set_volume(settings.sound_volume));
+				source.iter_mut().try_for_each(Source::play).unwrap();
+				state.music = Some(source.unwrap());
+			}
 		}
 	}
 }
@@ -89,6 +108,7 @@ pub struct Script {
 	pub commands: Vec<Command>,
 	pub labels: HashMap<Label, Target>,
 	pub images: HashMap<PathBuf, Image>,
+	pub audio: HashMap<PathBuf, SoundData>,
 }
 
 impl Index<&Target> for Script {
@@ -103,6 +123,8 @@ impl Index<&Target> for Script {
 pub struct ScriptState {
 	pub target: Target,
 	pub next_target: Option<Target>,
+	pub music: Option<Source>,
+	pub sounds: Vec<Source>,
 }
 
 #[derive(Debug, Default)]
@@ -275,6 +297,10 @@ pub struct Settings {
 	pub branch_button_height: f32,
 	/// Paths to look for resource files.
 	pub resource_paths: Vec<String>,
+	/// Volume of music that is played. The normal volume is `1.0`.
+	pub music_volume: f32,
+	/// Volume of sound effects that are played. The normal volume is `1.0`.
+	pub sound_volume: f32,
 }
 
 impl Default for Settings {
@@ -293,6 +319,8 @@ impl Default for Settings {
 			branch_button_width: 0.3,
 			branch_button_height: 0.1,
 			resource_paths: Vec::new(),
+			music_volume: 1.0,
+			sound_volume: 1.0,
 		}
 	}
 }
