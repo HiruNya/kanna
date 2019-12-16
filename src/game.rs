@@ -99,15 +99,17 @@ pub fn run(mut script: Script, settings: Settings) -> ggez::GameResult {
 }
 
 pub fn load_images(ctx: &mut ggez::Context, script: &mut Script) -> ggez::GameResult {
-	script.characters.load_images(&mut script.images, ctx)?;
-	for command in &script.commands {
-		match command {
-			Command::Stage(path) => {
-				let image = graphics::Image::new(ctx, path)?;
-				script.images.insert(path.clone(), image);
-			}
-			_ => (),
-		}
-	};
-	Ok(())
+	let Characters(characters) = &script.characters;
+	let paths = characters.values().flat_map(|states|
+		states.values()).map(|state| &state.image);
+	let paths = Iterator::chain(paths, script.commands.iter()
+		.filter_map(|command| match command {
+			Command::Stage(path) => Some(path),
+			_ => None,
+		}));
+
+	Ok(for path in paths {
+		let image = graphics::Image::new(ctx, path)?;
+		script.images.insert(path.clone(), image);
+	})
 }
