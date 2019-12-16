@@ -18,6 +18,8 @@ pub fn main() -> ggez::GameResult {
 			Command::Dialogue(Character("John Wick".into()), "John Wick needs your credit card number and the three digits on the back so he can win this epic victory and take home the bread.".into()),
 			Command::Spawn("Character".into(), "Happy".into(), (320., 240.).into(), None),
 			Command::Position("Character".into(), 540., 240.),
+			Command::Hide("Character".into()),
+			Command::Show("Character".into()),
 			Command::Change("Character".into(), "Sad".into()),
 			Command::Kill("Character".into()),
 			Command::Dialogue(Character("Bruh Moment".into()), "Hi, this is a bruh moment.".into()),
@@ -31,8 +33,8 @@ pub fn main() -> ggez::GameResult {
 		],
 		labels: {
 			let mut labels = HashMap::new();
-			labels.insert(Label("bruh-moment-sigh".into()), Target(8));
-			labels.insert(Label("bruh-moment-rest".into()), Target(9));
+			labels.insert(Label("bruh-moment-sigh".into()), Target(10));
+			labels.insert(Label("bruh-moment-rest".into()), Target(11));
 			labels
 		},
 		images: HashMap::new(),

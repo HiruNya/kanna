@@ -19,10 +19,14 @@ pub enum Command {
 	/// Presents the user with a list of options and jumps to a label
 	/// depending on the option that is chosen.
 	Diverge(Vec<(String, Label)>),
+	/// Makes an instance invisible.
+	Hide(String),
 	/// Kills an instance.
 	Kill(String),
 	/// Sets the position of an instance.
 	Position(String, f32, f32),
+	/// Makes an instance visible.
+	Show(String),
 	/// Creates an instance of a character onto the screen.
 	/// Consists of the Character, State, Position, and Instance.
 	Spawn(String, String, Option<(f32, f32)>, Option<String>),
@@ -75,12 +79,18 @@ impl Command {
 						settings.background_colour, settings.secondary_colour), label.clone())
 				}).collect();
 			}
+			Command::Hide(instance) => {
+				render.stage.0.get_mut(instance).expect("Error getting instance.").visible = false;
+			}
 			Command::Position(instance, x, y) => {
 				let instance = render.stage.0.get_mut(instance).expect("Error getting instance.");
 				instance.position = (*x, *y);
 			}
 			Command::Kill(instance) => {
 				render.stage.0.remove(instance);
+			}
+			Command::Show(instance) => {
+				render.stage.0.get_mut(instance).expect("Error getting instance.").visible = true;
 			}
 			Command::Spawn(character, state, position, instance_name) => {
 				let position = position.unwrap_or((0., 0.));
@@ -369,6 +379,8 @@ pub struct Instance {
 	pub position: (f32, f32),
 	/// The amount the image is scaled by.
 	pub scale: (f32, f32),
+	/// Whether the instance is visible.
+	pub visible: bool,
 }
 impl Instance {
 	/// Creates a new instance.
@@ -389,6 +401,7 @@ impl Instance {
 			image,
 			position,
 			scale,
+			visible: true,
 		}
 	}
 	/// Draws the instance to the screen.
@@ -410,6 +423,7 @@ impl Stage {
 	/// Draws all the instances it contains.
 	pub fn draw(&self, ctx: &mut ggez::Context) -> ggez::GameResult {
 		self.0.values()
+			.filter(|v| v.visible)
 			.map(|v| v.draw(ctx))
 			.collect()
 	}
