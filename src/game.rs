@@ -1,4 +1,4 @@
-use ggez::{self, audio, event, graphics, input};
+use ggez::{self, audio, Context, event, graphics, input};
 
 use super::*;
 
@@ -52,11 +52,17 @@ impl event::EventHandler for GameState {
 		self.render.character.as_ref().map(|text| text.draw(ctx)).transpose()?;
 		self.render.text.as_ref().map(|text| text.draw(ctx)).transpose()?;
 		self.render.branches.iter().try_for_each(|(button, _)| button.draw(ctx))?;
+		self.render.shadow_bars.iter().try_for_each(|bar| {
+			let bar = graphics::Mesh::new_rectangle(ctx,
+				graphics::DrawMode::fill(), *bar, graphics::BLACK)?;
+			graphics::draw(ctx, &bar, graphics::DrawParam::new())
+		})?;
 		graphics::present(ctx)
 	}
 
 	fn mouse_button_down_event(&mut self, ctx: &mut ggez::Context,
 	                           _: input::mouse::MouseButton, x: f32, y: f32) {
+		let (x, y) = transform(ctx, (x, y));
 		match self.script[&self.state.target] {
 			Command::Diverge(_) => {
 				for (button, label) in &self.render.branches {
@@ -72,14 +78,43 @@ impl event::EventHandler for GameState {
 		}
 	}
 
-	fn mouse_motion_event(&mut self, _: &mut ggez::Context, x: f32, y: f32, _: f32, _: f32) {
-		self.render.branches.iter_mut().for_each(|(button, _)| button.update((x, y)));
+	fn mouse_motion_event(&mut self, ctx: &mut ggez::Context, x: f32, y: f32, _: f32, _: f32) {
+		self.render.branches.iter_mut().for_each(|(button, _)|
+			button.update(transform(ctx, (x, y))));
+	}
+
+	fn resize_event(&mut self, ctx: &mut Context, width: f32, height: f32) {
+		let window_ratio = width / height;
+		let view_ratio = self.settings.width / self.settings.height;
+		graphics::set_screen_coordinates(ctx, match view_ratio < window_ratio {
+			true => {
+				let (screen_width, view_height) = (height * view_ratio, self.settings.height);
+				let offset = (width - screen_width) * (self.settings.width / screen_width) / 2.0;
+				self.render.shadow_bars[1] = [self.settings.width, 0.0, offset, view_height].into();
+				self.render.shadow_bars[0] = [-offset, 0.0, offset, view_height].into();
+				[-offset, 0.0, self.settings.width + offset * 2.0, view_height]
+			}
+			false => {
+				let (screen_height, view_width) = (width * view_ratio.recip(), self.settings.width);
+				let offset = (height - screen_height) * (self.settings.height / screen_height) / 2.0;
+				self.render.shadow_bars[1] = [0.0, self.settings.height, view_width, offset].into();
+				self.render.shadow_bars[0] = [0.0, -offset, view_width, offset].into();
+				[0.0, -offset, view_width, self.settings.height + offset * 2.0]
+			}
+		}.into()).unwrap();
 	}
 }
 
 pub fn rate<F, R>(ctx: &mut ggez::Context, rate: u32, mut function: F) -> ggez::GameResult
 	where F: FnMut(&mut ggez::Context) -> ggez::GameResult<R> {
 	Ok(while ggez::timer::check_update_time(ctx, rate) { function(ctx)?; })
+}
+
+/// Transforms absolute coordinates into screen coordinates.
+pub fn transform(ctx: &ggez::Context, (x, y): (f32, f32)) -> (f32, f32) {
+	let screen = graphics::screen_coordinates(ctx);
+	let (width, height) = graphics::drawable_size(ctx);
+	(screen.x + (screen.w / width) * x, screen.y + (screen.h / height) * y)
 }
 
 pub fn run(mut script: Script, settings: Settings) -> ggez::GameResult {

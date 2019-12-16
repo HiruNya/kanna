@@ -133,6 +133,7 @@ pub struct Render {
 	pub character: Option<TextBox>,
 	pub text: Option<TextBox>,
 	pub branches: Vec<(Button, Label)>,
+	pub shadow_bars: [graphics::Rect; 2],
 }
 
 #[derive(Debug)]
@@ -268,9 +269,9 @@ impl Deref for Button {
 
 #[derive(Debug)]
 pub struct Settings {
-	/// Width of the game window.
+	/// Width of the view.
 	pub width: f32,
-	/// Height of the game window.
+	/// Height of the view.
 	pub height: f32,
 	/// Rate at which characters are displayed.
 	pub text_speed: u32,
