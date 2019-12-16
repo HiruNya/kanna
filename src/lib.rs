@@ -320,13 +320,22 @@ impl Default for Settings {
 	}
 }
 
+/// A state represents a possible image of a character.
 #[derive(Clone, Debug)]
 pub struct State {
-	centre_position: Option<(u16, u16)>,
-	image: PathBuf,
-	scale: Option<(f32, f32)>,
+	/// The centre of the image (in pixels).
+	/// This will be used when the image has it's position set, is scaled, or is rotated.
+	/// Is (0, 0) by default (top-left corner of the image).
+	pub centre_position: Option<(u16, u16)>,
+	/// The path to the image.
+	pub image: PathBuf,
+	/// The amount this image is to be scaled by.
+	/// (A value from 0 to 1).
+	/// Is (1., 1.) by default (normal size).
+	pub scale: Option<(f32, f32)>,
 }
 impl State {
+	/// Create a new state, specifying the path to the image.
 	pub fn new<P: Into<PathBuf>>(path: P) -> Self {
 		Self {
 			image: path.into(),
@@ -334,25 +343,35 @@ impl State {
 			scale: None,
 		}
 	}
+	/// Set the centre of the image (in pixels).
 	pub fn centre_position(mut self, x: u16, y: u16) -> Self {
 		self.centre_position = Some((x, y));
 		self
 	}
+	/// Sets the scaling of the image.
 	pub fn scale(mut self, x: f32, y: f32) -> Self {
 		self.scale = Some((x, y));
 		self
 	}
 }
 
+/// A character that has been spawned onto the screen.
 #[derive(Debug)]
 pub struct Instance {
+	/// The character which this instance belongs to.
 	pub character: String,
+	/// The position of the image's centre (in pixels).
+	/// This determines the centre of rotation and scaling.
 	pub centre_position: (f32, f32),
+	/// The image that this instance draws to the screen.
 	pub image: Image,
+	/// The position on the screen (in pixels).
 	pub position: (f32, f32),
+	/// The amount the image is scaled by.
 	pub scale: (f32, f32),
 }
 impl Instance {
+	/// Creates a new instance.
 	fn new(character: String, state: State, position: (f32, f32), script: &Script) -> Self {
 		let image = script.images.get(&state.image)
 			.unwrap_or_else(|| panic!("Could not find image at path: {:?}.", &state.image))
@@ -372,6 +391,7 @@ impl Instance {
 			scale,
 		}
 	}
+	/// Draws the instance to the screen.
 	fn draw(&self, ctx: &mut ggez::Context) -> ggez::GameResult {
 		let offset_x = self.centre_position.0 / (self.image.width() as f32);
 		let offset_y = self.centre_position.1 / (self.image.height() as f32);
@@ -383,28 +403,34 @@ impl Instance {
 	}
 }
 
+/// Holds alls the instances.
 #[derive(Debug, Default)]
 pub struct Stage(pub HashMap<String, Instance>);
 impl Stage {
+	/// Draws all the instances it contains.
 	pub fn draw(&self, ctx: &mut ggez::Context) -> ggez::GameResult {
 		self.0.values()
 			.map(|v| v.draw(ctx))
 			.collect()
 	}
+	/// Spawns a new instance onto the stage.
 	pub fn spawn(&mut self, name: String, instance: Instance) {
 		self.0.insert(name, instance);
 	}
 }
 
+/// Holds all the characters and their respective states.
 #[derive(Debug, Default)]
-pub struct Characters(HashMap<String, HashMap<String, State>>);
+pub struct Characters(pub HashMap<String, HashMap<String, State>>);
 impl Characters {
+	/// Add a character with a hashmap of its states.
 	pub fn add_character<S: Into<String>>(&mut self, name: S, states: HashMap<S, State>) {
 		let states = states.into_iter()
 			.map(|(k, v)| (k.into(), v))
 			.collect::<HashMap<String, State>>();
 		self.0.insert(name.into(), states);
 	}
+	/// Load all the images held by the states into the provided HashMap of images.
 	pub fn load_images(&self, images: &mut HashMap<PathBuf, Image>, ctx: &mut ggez::Context) -> ggez::GameResult {
 		let state_images = self.0.values()
 			.map(|characters| characters.values())
@@ -415,6 +441,7 @@ impl Characters {
 		images.extend(state_images);
 		Ok(())
 	}
+	/// Get a state by providing the name of the character it belonged to and the name of the state.
 	pub fn get(&self, character: &String, state: &String) -> State {
 		let state_map = self.0.get(character).unwrap_or_else(|| panic!("Could not find Character: {}", character));
 		let state = state_map.get(state).unwrap_or_else(|| panic!("Could not find State: {}", state)).clone();
