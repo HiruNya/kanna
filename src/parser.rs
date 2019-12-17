@@ -1,4 +1,4 @@
-use crate::{Command, Label, lexer::Lexer, Script, Target};
+use crate::{Command, FlagName, Label, lexer::Lexer, Script, Target};
 use crate::character::{CharacterName, InstanceName, StateName};
 
 #[derive(Debug, PartialEq)]
@@ -89,6 +89,13 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 						Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
 					}));
 			}
+			"if" => {
+				let flag = FlagName(inline(lexer.identifier())?);
+				script.commands.push(Command::If(flag, Label(inline(lexer.identifier())?)));
+			}
+			"pause" => script.commands.push(Command::Pause),
+			"flag" => script.commands.push(Command::Flag(FlagName(inline(lexer.identifier())?))),
+			"unflag" => script.commands.push(Command::Unflag(FlagName(inline(lexer.identifier())?))),
 			"kill" => script.commands.push(Command::Kill(InstanceName(inline(lexer.string())?))),
 			"show" => script.commands.push(Command::Show(InstanceName(inline(lexer.string())?))),
 			"hide" => script.commands.push(Command::Hide(InstanceName(inline(lexer.string())?))),

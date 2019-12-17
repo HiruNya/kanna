@@ -1,9 +1,10 @@
 use std::io::Read;
 use std::path::Path;
+use std::path::PathBuf;
 
-use ggez::{self, audio, event, graphics, input};
+use ggez::{self, event, graphics, input};
 
-use super::*;
+use crate::{Characters, Command, Render, Script, ScriptState, Settings, Target};
 
 #[derive(Debug)]
 pub struct GameState {
@@ -15,28 +16,32 @@ pub struct GameState {
 
 impl GameState {
 	pub fn new(ctx: &mut ggez::Context, script: Script, settings: Settings) -> Self {
-		let (mut state, mut render) = (ScriptState::default(), Render::default());
-		script[&state.target].execute(ctx, &mut state, &mut render, &script, &settings);
-		GameState { script, settings, state, render }
+		let (state, render) = (ScriptState::default(), Render::default());
+		let mut state = GameState { script, settings, state, render };
+		state.state.next_target = Some(Target::default());
+		state.advance(ctx);
+		state
 	}
 
 	pub fn advance(&mut self, ctx: &mut ggez::Context) {
 		match &mut self.render.text {
 			Some(text) if !text.is_finished() => text.finish(),
-			_ => match self.state.next_target.take() {
-				Some(target) => self.jump(ctx, target),
-				None => {
-					self.state.target.advance();
-					self.jump(ctx, self.state.target.clone())
+			_ => loop {
+				self.state.target = self.state.next_target.take()
+					.unwrap_or(self.state.target.next());
+
+				let command = &self.script[&self.state.target];
+				command.execute(ctx, &mut self.state,
+					&mut self.render, &self.script, &self.settings);
+
+				match command {
+					Command::Pause => break,
+					Command::Diverge(_) => break,
+					Command::Dialogue(_, _) => break,
+					_ => (),
 				}
 			},
 		}
-	}
-
-	pub fn jump(&mut self, ctx: &mut ggez::Context, target: Target) {
-		self.state.target = target;
-		self.script[&self.state.target].execute(ctx, &mut self.state,
-			&mut self.render, &self.script, &self.settings)
 	}
 }
 
@@ -44,7 +49,7 @@ impl event::EventHandler for GameState {
 	fn update(&mut self, ctx: &mut ggez::Context) -> ggez::GameResult {
 		rate(ctx, self.settings.text_speed, |_|
 			Ok(self.render.text.as_mut().map(|text| text.step())))?;
-		self.state.sounds.retain(Source::playing);
+		self.state.sounds.retain(ggez::audio::SoundSource::playing);
 		Ok(())
 	}
 
@@ -72,9 +77,9 @@ impl event::EventHandler for GameState {
 				for (button, label) in &self.render.branches {
 					if button.rectangle().contains([x, y]) {
 						let target = self.script.labels[&label].clone();
+						self.state.next_target = Some(target);
 						self.render.branches.clear();
-						self.jump(ctx, target);
-						return;
+						return self.advance(ctx);
 					}
 				}
 			}
@@ -196,7 +201,7 @@ pub fn load_audio(ctx: &mut ggez::Context, script: &mut Script) -> ggez::GameRes
 	script.commands.iter().try_for_each(|command| match command {
 		Command::Music(path) | Command::Sound(path) => Ok({
 			if !script_audio.contains_key(path) {
-				let audio = audio::SoundData::new(ctx, path)?;
+				let audio = ggez::audio::SoundData::new(ctx, path)?;
 				script_audio.insert(path.clone(), audio);
 			}
 		}),

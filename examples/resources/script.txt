@@ -1,10 +1,16 @@
 "John Wick" "John Wick needs your credit card number and the three digits on the back so he can win this epic victory and take home the bread."
 spawn "Character" "Happy" (320, 240)
+pause
 position "Character" (540, 240)
+pause
 hide "Character"
+pause
 show "Character"
+pause
 change "Character" "Sad"
+pause
 kill "Character"
+pause
 "Bruh Moment" "Hi, this is a bruh moment."
 stage "/background.jpg"
 
@@ -14,6 +20,7 @@ diverge
 
 label bruh-moment-sigh
 "Don't sigh me!"
+flag sighed
 jump bruh-moment-end
 
 label bruh-moment-rest
@@ -23,3 +30,14 @@ jump bruh-moment-end
 label bruh-moment-end
 music "/music.ogg"
 "The weather sure is nice today."
+
+if sighed bad-sigh
+jump other
+
+label bad-sigh
+"But it isn't perfect because SOMEONE had to sigh."
+
+label other
+"Lots of clouds and stuff."
+"They look like cotton candy."
+

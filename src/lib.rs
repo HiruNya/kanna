@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Index;
 use std::path::PathBuf;
 
@@ -14,6 +14,9 @@ pub mod parser;
 pub mod interface;
 pub mod character;
 
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct FlagName(pub String);
+
 #[derive(Debug)]
 pub enum Command {
 	/// Changes the state of an instance.
@@ -23,6 +26,12 @@ pub enum Command {
 	/// Presents the user with a list of options and jumps to a label
 	/// depending on the option that is chosen.
 	Diverge(Vec<(String, Label)>),
+	/// Jumps to a label if the flag has been set.
+	If(FlagName, Label),
+	/// Sets a flag.
+	Flag(FlagName),
+	/// Removes a flag if it has been set.
+	Unflag(FlagName),
 	/// Makes an instance visible.
 	Show(InstanceName),
 	/// Makes an instance invisible.
@@ -42,6 +51,8 @@ pub enum Command {
 	Music(PathBuf),
 	/// Plays a sound effect.
 	Sound(PathBuf),
+	/// Waits for user interaction before continuing.
+	Pause,
 }
 
 impl Command {
@@ -91,6 +102,11 @@ impl Command {
 						settings.background_colour, settings.secondary_colour), label.clone())
 				}).collect();
 			}
+			Command::If(flag, label) => if state.flags.contains(flag) {
+				state.next_target = Some(script.labels[label].clone());
+			}
+			Command::Flag(flag) => { state.flags.insert(flag.clone()); }
+			Command::Unflag(flag) => { state.flags.remove(flag); }
 			Command::Show(instance) => render.stage[instance].visible = true,
 			Command::Hide(instance) => render.stage[instance].visible = false,
 			Command::Position(instance, position) => render.stage[instance].position = *position,
@@ -116,6 +132,7 @@ impl Command {
 				source.iter_mut().try_for_each(Source::play).unwrap();
 				state.music = Some(source.unwrap());
 			}
+			Command::Pause => (),
 		}
 	}
 }
@@ -124,9 +141,9 @@ impl Command {
 pub struct Target(pub usize);
 
 impl Target {
-	pub fn advance(&mut self) {
+	pub fn next(&self) -> Target {
 		let Target(index) = self;
-		*index += 1;
+		Target(index + 1)
 	}
 }
 
@@ -154,6 +171,7 @@ impl Index<&Target> for Script {
 pub struct ScriptState {
 	pub target: Target,
 	pub next_target: Option<Target>,
+	pub flags: HashSet<FlagName>,
 	pub music: Option<Source>,
 	pub sounds: Vec<Source>,
 }
