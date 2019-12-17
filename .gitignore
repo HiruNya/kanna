@@ -3,3 +3,4 @@ target/
 .idea
 examples/resources
 !examples/resources/*.txt
+!examples/resources/*.toml

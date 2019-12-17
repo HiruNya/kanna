@@ -3,20 +3,23 @@ use std::ops::{Index, IndexMut};
 use std::path::PathBuf;
 
 use ggez::graphics;
+use serde::Deserialize;
 
 use crate::Script;
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Deserialize, Clone, Hash, Eq, PartialEq)]
+#[serde(transparent)]
 pub struct CharacterName(pub String);
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct InstanceName(pub String);
 
-#[derive(Debug, Hash, Eq, PartialEq)]
+#[derive(Debug, Deserialize, Hash, Eq, PartialEq)]
+#[serde(transparent)]
 pub struct StateName(pub String);
 
 /// A state represents a possible character image.
-#[derive(Clone, Debug)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct CharacterState {
 	/// Path to the image.
 	pub image: PathBuf,
@@ -141,7 +144,8 @@ impl IndexMut<&InstanceName> for Stage {
 }
 
 /// Holds all the characters and their respective states.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(transparent)]
 pub struct Characters(pub HashMap<CharacterName, HashMap<StateName, CharacterState>>);
 
 impl Characters {

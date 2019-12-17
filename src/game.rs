@@ -1,4 +1,5 @@
 use std::io::Read;
+use std::path::Path;
 
 use ggez::{self, audio, event, graphics, input};
 
@@ -143,12 +144,23 @@ pub fn run<F>(settings: Settings, script: F) -> ggez::GameResult
 /// Loading referenced resources is performed using [`load_resources`](fn.load_resources.html).
 pub fn load_script<P: Into<PathBuf>>(ctx: &mut ggez::Context, path: P) -> ggez::GameResult<Script> {
 	let path = &path.into();
-	let file = &mut ggez::filesystem::open(ctx, path)?;
-	let string = &mut String::new();
-	file.read_to_string(string)?;
+	crate::parser::parse(&read_string(ctx, path)?).map_err(|error|
+		panic!("Failed to parse script at: {}, because: {:?}", path.display(), error))
+}
 
-	Ok(crate::parser::parse(string).unwrap_or_else(|_|
-		panic!("Failed to parse script at: {}", path.display())))
+/// Loads a set of characters from a given path. Characters are formatted in the TOML format.
+pub fn load_characters<P: Into<PathBuf>>(ctx: &mut ggez::Context, path: P) -> ggez::GameResult<Characters> {
+	let path = &path.into();
+	toml::from_str(&read_string(ctx, path)?).map_err(|error|
+		panic!("Failed to parse character set at: {}, because: {}", path.display(), error))
+}
+
+/// Reads a file from a given path as a string.
+pub fn read_string<P: AsRef<Path>>(ctx: &mut ggez::Context, path: P) -> ggez::GameResult<String> {
+	let mut string = String::new();
+	let file = &mut ggez::filesystem::open(ctx, path)?;
+	file.read_to_string(&mut string)?;
+	Ok(string)
 }
 
 /// Loads all resources that are referenced in a script.

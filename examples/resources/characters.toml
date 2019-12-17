@@ -1,0 +1,7 @@
+[Character.Happy]
+image = "/character-happy.png"
+scale = [0.5, 0.5]
+
+[Character.Sad]
+image = "/character-sad.png"
+scale = [0.5, 0.5]
