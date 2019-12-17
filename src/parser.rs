@@ -1,13 +1,16 @@
-use crate::{Label, lexer::Lexer, Target};
-
-use super::{CharacterName, Command, Script};
+use crate::{Command, Label, lexer::Lexer, Script, Target};
+use crate::character::{CharacterName, InstanceName, StateName};
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
 	Identifier(String),
 	String(String),
+	Numeric(f32),
 	ScopeOpen,
 	ScopeClose,
+	BracketOpen,
+	BracketClose,
+	ListSeparator,
 	Terminator,
 }
 
@@ -16,9 +19,11 @@ pub enum ParserError {
 	UnmatchedQuote,
 	ExpectedIdentifier,
 	ExpectedString,
+	ExpectedNumeric,
 	Expected(Token),
 	UnexpectedToken,
 	InvalidCommand,
+	InvalidNumeric,
 }
 
 pub fn parse(string: &str) -> Result<Script, Vec<ParserError>> {
@@ -52,32 +57,45 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 	};
 
 	match initial {
+		Token::Terminator => (),
 		Token::Identifier(identifier) => match identifier.as_str() {
-			"stage" => {
-				let path = lexer.string().map_err(|error| (error, Token::Terminator))?;
-				script.commands.push(Command::Stage(path.into()));
+			"change" => {
+				let instance = InstanceName(inline(lexer.string())?);
+				let state = StateName(inline(lexer.string())?);
+				script.commands.push(Command::Change(instance, state));
 			}
 			"diverge" => {
-				lexer.expect(Token::Terminator).map_err(|error| (error, Token::Terminator))?;
-				lexer.expect(Token::ScopeOpen).map_err(|error| (error, Token::Terminator))?;
+				inline(lexer.expect(Token::Terminator))?;
+				inline(lexer.expect(Token::ScopeOpen))?;
 				parse_diverge(lexer, script).map_err(|error| (error, Token::ScopeClose))?;
 			}
 			"label" => {
-				let label = lexer.identifier().map_err(|error| (error, Token::Terminator))?;
-				script.labels.insert(Label(label), Target(script.commands.len()));
+				let label = Label(inline(lexer.identifier())?);
+				script.labels.insert(label, Target(script.commands.len()));
 			}
-			"jump" => {
-				let label = lexer.identifier().map_err(|error| (error, Token::Terminator))?;
-				script.commands.push(Command::Jump(Label(label)));
+			"position" => {
+				let instance = InstanceName(inline(lexer.string())?);
+				script.commands.push(Command::Position(instance, position(lexer)?));
 			}
-			"music" => {
-				let path = lexer.string().map_err(|error| (error, Token::Terminator))?;
-				script.commands.push(Command::Music(path.into()));
+			"spawn" => {
+				let character = CharacterName(inline(lexer.string())?);
+				let state = StateName(inline(lexer.string())?);
+				let position = position(lexer)?;
+
+				script.commands.push(Command::Spawn(character, state, position,
+					match inline(lexer.token())? {
+						None | Some(Token::Terminator) => None,
+						Some(Token::String(string)) => Some(InstanceName(string)),
+						Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
+					}));
 			}
-			"sound" => {
-				let path = lexer.string().map_err(|error| (error, Token::Terminator))?;
-				script.commands.push(Command::Sound(path.into()));
-			}
+			"kill" => script.commands.push(Command::Kill(InstanceName(inline(lexer.string())?))),
+			"show" => script.commands.push(Command::Show(InstanceName(inline(lexer.string())?))),
+			"hide" => script.commands.push(Command::Hide(InstanceName(inline(lexer.string())?))),
+			"stage" => script.commands.push(Command::Stage(inline(lexer.string())?.into())),
+			"jump" => script.commands.push(Command::Jump(Label(inline(lexer.identifier())?))),
+			"music" => script.commands.push(Command::Music(inline(lexer.string())?.into())),
+			"sound" => script.commands.push(Command::Sound(inline(lexer.string())?.into())),
 			_ => return Err((ParserError::InvalidCommand, Token::Terminator)),
 		}
 		Token::String(string) => match lexer.token().map_err(|error| (error, Token::Terminator))? {
@@ -86,15 +104,27 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			Some(Token::String(dialogue)) => {
 				let character = Some(CharacterName(string));
 				script.commands.push(Command::Dialogue(character, dialogue));
-				lexer.expect(Token::Terminator).map_err(|error| (error, Token::Terminator))?;
+				inline(lexer.expect(Token::Terminator))?;
 			}
 			_ => return Err((ParserError::Expected(Token::Terminator), Token::Terminator)),
 		},
 		Token::ScopeOpen => return Err((ParserError::UnexpectedToken, Token::ScopeClose)),
-		Token::ScopeClose => return Err((ParserError::UnexpectedToken, Token::Terminator)),
-		Token::Terminator => (),
+		_ => return Err((ParserError::UnexpectedToken, Token::Terminator)),
 	};
 	Ok(false)
+}
+
+pub fn inline<T>(result: Result<T, ParserError>) -> Result<T, (ParserError, Token)> {
+	result.map_err(|error| (error, Token::Terminator))
+}
+
+pub fn position(lexer: &mut Lexer) -> Result<(f32, f32), (ParserError, Token)> {
+	inline(lexer.expect(Token::BracketOpen))?;
+	let position_x = inline(lexer.numeric())?;
+	inline(lexer.expect(Token::ListSeparator))?;
+	let position_y = inline(lexer.numeric())?;
+	inline(lexer.expect(Token::BracketClose))?;
+	Ok((position_x, position_y))
 }
 
 pub fn parse_diverge(lexer: &mut Lexer, script: &mut Script) -> Result<(), ParserError> {
@@ -110,6 +140,7 @@ pub fn parse_diverge(lexer: &mut Lexer, script: &mut Script) -> Result<(), Parse
 				branches.push((string, Label(identifier)));
 				lexer.expect(Token::Terminator)?;
 			}
+			Ok(Some(Token::Terminator)) => (),
 			_ => return Err(ParserError::ExpectedString),
 		}
 	}

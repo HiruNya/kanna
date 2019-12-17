@@ -24,21 +24,28 @@ impl<'a> Lexer<'a> {
 	}
 
 	pub fn identifier(&mut self) -> Result<String, ParserError> {
-		match self.next().transpose()? {
+		match self.token()? {
 			Some(Token::Identifier(identifier)) => Ok(identifier),
 			_ => Err(ParserError::ExpectedIdentifier),
 		}
 	}
 
 	pub fn string(&mut self) -> Result<String, ParserError> {
-		match self.next().transpose()? {
+		match self.token()? {
 			Some(Token::String(string)) => Ok(string),
 			_ => Err(ParserError::ExpectedString),
 		}
 	}
 
+	pub fn numeric(&mut self) -> Result<f32, ParserError> {
+		match self.token()? {
+			Some(Token::Numeric(numeric)) => Ok(numeric),
+			_ => Err(ParserError::ExpectedNumeric),
+		}
+	}
+
 	pub fn expect(&mut self, token: Token) -> Result<(), ParserError> {
-		match self.next().transpose()?.as_ref() == Some(&token) {
+		match self.token()?.as_ref() == Some(&token) {
 			false => Err(ParserError::Expected(token)),
 			true => Ok(())
 		}
@@ -93,10 +100,13 @@ impl<'a> Iterator for Lexer<'a> {
 			}
 		};
 
-		match character {
+		Some(Ok(match character {
+			'(' => Token::BracketOpen,
+			')' => Token::BracketClose,
+			',' => Token::ListSeparator,
 			'\n' => {
 				self.new_line = true;
-				Some(Ok(Token::Terminator))
+				Token::Terminator
 			}
 			'"' => loop {
 				let character = self.characters.peek();
@@ -104,21 +114,24 @@ impl<'a> Iterator for Lexer<'a> {
 					Some((_, '"')) => {
 						let (index, _) = self.characters.next().unwrap();
 						let string = self.string[start + 1..index].to_owned();
-						return Some(Ok(Token::String(escape(string))));
+						break Token::String(escape(string));
 					}
 					Some((_, '\\')) => {
 						self.characters.next();
 						self.characters.next()
 					}
-					None | Some((_, '\n')) => return Some(Err(ParserError::UnmatchedQuote)),
+					None | Some((_, '\n')) =>
+						return Some(Err(ParserError::UnmatchedQuote)),
 					Some(_) => self.characters.next(),
 				};
 			},
 			_ => match character.is_whitespace() {
-				true => self.next(),
+				true => return self.next(),
 				false => {
 					while let Some((_, character)) = self.characters.peek() {
-						match character.is_whitespace() {
+						let is_punctuation = !['-', '.'].contains(character)
+							&& character.is_ascii_punctuation();
+						match character.is_whitespace() || is_punctuation {
 							false => self.characters.next(),
 							true => break,
 						};
@@ -126,10 +139,16 @@ impl<'a> Iterator for Lexer<'a> {
 
 					let end = self.characters.peek().map(|(index, _)| *index);
 					let string = &self.string[start..end.unwrap_or(self.string.len())];
-					Some(Ok(Token::Identifier(string.to_owned())))
+					match character == '-' || character.is_digit(10) {
+						false => Token::Identifier(string.to_owned()),
+						true => match string.parse() {
+							Ok(numeric) => Token::Numeric(numeric),
+							Err(_) => return Some(Err(ParserError::InvalidNumeric)),
+						}
+					}
 				}
 			}
-		}
+		}))
 	}
 }
 
@@ -142,20 +161,32 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn test_lexer() {
+	fn lexer_string() {
 		assert_eq!(Lexer::new("string").next(), Some(Ok(Token::Identifier("string".to_owned()))));
 		assert_eq!(Lexer::new("\"string\"").next(), Some(Ok(Token::String("string".to_owned()))));
 		assert_eq!(Lexer::new("\"string\\n\"").next(), Some(Ok(Token::String("string\n".to_owned()))));
 		assert_eq!(Lexer::new("\"\\\"\"").next(), Some(Ok(Token::String("\"".to_owned()))));
 		assert_eq!(Lexer::new("\"string").next(), Some(Err(ParserError::UnmatchedQuote)));
+	}
 
+	#[test]
+	fn lexer_scope() {
 		assert_eq!(Lexer::new("\t").next(), None);
 		assert_eq!(Lexer::new("\t\n").next(), Some(Ok(Token::Terminator)));
 		assert_eq!(&Lexer::new("\tstring").collect::<Vec<_>>(), &[Ok(Token::ScopeOpen),
 			Ok(Token::Identifier("string".to_owned())), Ok(Token::ScopeClose)]);
-
 		assert_eq!(&Lexer::new("diverge\n\t\"string\"").collect::<Vec<_>>(),
 			&[Ok(Token::Identifier("diverge".to_owned())), Ok(Token::Terminator),
 				Ok(Token::ScopeOpen), Ok(Token::String("string".to_owned())), Ok(Token::ScopeClose)]);
+	}
+
+	#[test]
+	fn lexer_numeric() {
+		assert_eq!(Lexer::new("0").next(), Some(Ok(Token::Numeric(0.0))));
+		assert_eq!(Lexer::new("1").next(), Some(Ok(Token::Numeric(1.0))));
+		assert_eq!(Lexer::new("1.0").next(), Some(Ok(Token::Numeric(1.0))));
+		assert_eq!(Lexer::new("-1.0").next(), Some(Ok(Token::Numeric(-1.0))));
+		assert_eq!(&Lexer::new("(1.0,)").collect::<Vec<_>>(), &[Ok(Token::BracketOpen),
+			Ok(Token::Numeric(1.0)), Ok(Token::ListSeparator), Ok(Token::BracketClose)]);
 	}
 }
