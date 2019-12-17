@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use kanna::*;
+use kanna::character::*;
 
 pub fn main() -> ggez::GameResult {
 	let mut settings = Settings::default();
@@ -8,8 +9,8 @@ pub fn main() -> ggez::GameResult {
 	let mut characters = Characters::default();
 	characters.insert(CharacterName("Character".into()), {
 		let mut states = HashMap::new();
-		states.insert(StateName("Happy".into()), State::new("/character-happy.png").scale((0.5, 0.5)));
-		states.insert(StateName("Sad".into()), State::new("/character-sad.png").scale((0.5, 0.5)));
+		states.insert(StateName("Happy".into()), CharacterState::new("/character-happy.png").scale((0.5, 0.5)));
+		states.insert(StateName("Sad".into()), CharacterState::new("/character-sad.png").scale((0.5, 0.5)));
 		states
 	});
 
@@ -32,6 +33,7 @@ pub fn main() -> ggez::GameResult {
 			]),
 			Command::Dialogue(Some(CharacterName("Bruh Moment".into())), "Don't sigh me!".into()),
 			Command::Dialogue(Some(CharacterName("Bruh Moment".into())), "Bruh moments are indeed for resting.".into()),
+			Command::Music("/music.ogg".into()),
 		],
 		labels: {
 			let mut labels = HashMap::new();
