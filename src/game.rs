@@ -1,4 +1,6 @@
-use ggez::{self, audio, Context, event, graphics, input};
+use std::io::Read;
+
+use ggez::{self, audio, event, graphics, input};
 
 use super::*;
 
@@ -84,7 +86,7 @@ impl event::EventHandler for GameState {
 			button.update(transform(ctx, (x, y))));
 	}
 
-	fn resize_event(&mut self, ctx: &mut Context, width: f32, height: f32) {
+	fn resize_event(&mut self, ctx: &mut ggez::Context, width: f32, height: f32) {
 		let window_ratio = width / height;
 		let view_ratio = self.settings.width / self.settings.height;
 		graphics::set_screen_coordinates(ctx, match view_ratio < window_ratio {
@@ -118,7 +120,8 @@ pub fn transform(ctx: &ggez::Context, (x, y): (f32, f32)) -> (f32, f32) {
 	(screen.x + (screen.w / width) * x, screen.y + (screen.h / height) * y)
 }
 
-pub fn run(mut script: Script, settings: Settings) -> ggez::GameResult {
+pub fn run<F>(settings: Settings, script: F) -> ggez::GameResult
+	where F: FnOnce(&mut ggez::Context) -> ggez::GameResult<Script> {
 	let ctx = ggez::ContextBuilder::new("kanna", "kanna")
 		.window_mode(ggez::conf::WindowMode {
 			resizable: true,
@@ -131,13 +134,32 @@ pub fn run(mut script: Script, settings: Settings) -> ggez::GameResult {
 	settings.resource_paths.iter().map(std::path::PathBuf::from)
 		.for_each(|path| ggez::filesystem::mount(ctx, path.as_path(), true));
 
-	load_images(ctx, &mut script)?;
-	load_audio(ctx, &mut script)?;
-
+	let script = script(ctx)?;
 	let state = &mut GameState::new(ctx, script, settings);
 	event::run(ctx, event_loop, state)
 }
 
+/// Loads a script from a given path. No resources are loaded.
+/// Loading referenced resources is performed using [`load_resources`](fn.load_resources.html).
+pub fn load_script<P: Into<PathBuf>>(ctx: &mut ggez::Context, path: P) -> ggez::GameResult<Script> {
+	let path = &path.into();
+	let file = &mut ggez::filesystem::open(ctx, path)?;
+	let string = &mut String::new();
+	file.read_to_string(string)?;
+
+	Ok(crate::parser::parse(string).unwrap_or_else(|_|
+		panic!("Failed to parse script at: {}", path.display())))
+}
+
+/// Loads all resources that are referenced in a script.
+/// Ignores any resources that have already been loaded.
+pub fn load_resources(ctx: &mut ggez::Context, mut script: Script) -> ggez::GameResult<Script> {
+	load_images(ctx, &mut script)?;
+	load_audio(ctx, &mut script)?;
+	Ok(script)
+}
+
+/// Loads all the images that are referenced in a script.
 pub fn load_images(ctx: &mut ggez::Context, script: &mut Script) -> ggez::GameResult {
 	let Characters(characters) = &script.characters;
 	let paths = characters.values().flat_map(|states|
@@ -149,19 +171,23 @@ pub fn load_images(ctx: &mut ggez::Context, script: &mut Script) -> ggez::GameRe
 		}));
 
 	Ok(for path in paths {
-		let image = graphics::Image::new(ctx, path)?;
-		script.images.insert(path.clone(), image);
+		if !script.images.contains_key(path) {
+			let image = graphics::Image::new(ctx, path)?;
+			script.images.insert(path.clone(), image);
+		}
 	})
 }
 
+/// Loads all the audio that is referenced in a script.
 pub fn load_audio(ctx: &mut ggez::Context, script: &mut Script) -> ggez::GameResult {
-	Ok(for command in &script.commands {
-		match command {
-			Command::Music(path) | Command::Sound(path) => {
+	let script_audio = &mut script.audio;
+	script.commands.iter().try_for_each(|command| match command {
+		Command::Music(path) | Command::Sound(path) => Ok({
+			if !script_audio.contains_key(path) {
 				let audio = audio::SoundData::new(ctx, path)?;
-				script.audio.insert(path.clone(), audio);
+				script_audio.insert(path.clone(), audio);
 			}
-			_ => (),
-		}
+		}),
+		_ => Ok(()),
 	})
 }

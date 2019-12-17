@@ -15,36 +15,9 @@ pub fn main() -> ggez::GameResult {
 		states
 	});
 
-	let script = r#"
-"John Wick" "John Wick needs your credit card number and the three digits on the back so he can win this epic victory and take home the bread."
-spawn "Character" "Happy" (320, 240)
-position "Character" (540, 240)
-hide "Character"
-show "Character"
-change "Character" "Sad"
-kill "Character"
-"Bruh Moment" "Hi, this is a bruh moment."
-stage "/background.jpg"
-
-diverge
-	"Sigh" bruh-moment-sigh
-	"Rest" bruh-moment-rest
-
-label bruh-moment-sigh
-"Don't sigh me!"
-jump bruh-moment-end
-
-label bruh-moment-rest
-"Bruh moments are indeed for resting."
-jump bruh-moment-end
-
-label bruh-moment-end
-music "/music.ogg"
-"The weather sure is nice today."
-
-	"#;
-
-	let mut script = kanna::parser::parse(script).unwrap();
-	script.characters = characters;
-	kanna::game::run(script, settings)
+	kanna::game::run(settings, |ctx| {
+		let mut script = kanna::game::load_script(ctx, "/script.txt")?;
+		script.characters = characters;
+		kanna::game::load_resources(ctx, script)
+	})
 }

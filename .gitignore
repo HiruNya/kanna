@@ -1,4 +1,5 @@
 Cargo.lock
 target/
 .idea
-examples/resources/
+examples/resources
+!examples/resources/*.txt
