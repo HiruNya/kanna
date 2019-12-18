@@ -13,6 +13,7 @@ pub struct GameState {
 	history: History,
 	state: ScriptState,
 	render: Render,
+	reload: bool,
 }
 
 impl GameState {
@@ -20,7 +21,7 @@ impl GameState {
 	            settings: Settings, mut load_history: History) -> Self {
 		let history = History::default();
 		let (state, render) = (ScriptState::default(), Render::default());
-		let mut state = GameState { script, settings, history, state, render };
+		let mut state = GameState { script, settings, history, state, render, reload: false };
 
 		load_history.divergences.reverse();
 		state.state.next_target = Some(Target::default());
@@ -111,12 +112,21 @@ impl event::EventHandler for GameState {
 			button.update(transform(ctx, (x, y))));
 	}
 
+	fn key_down_event(&mut self, ctx: &mut Context, key: event::KeyCode,
+	                  modifiers: event::KeyMods, _: bool) {
+		if self.settings.developer {
+			if modifiers.contains(event::KeyMods::CTRL) {
+				if key == event::KeyCode::R {
+					save_history(ctx, &self.settings, &self.history);
+					self.reload = true;
+					event::quit(ctx);
+				}
+			}
+		}
+	}
+
 	fn quit_event(&mut self, ctx: &mut Context) -> bool {
-		let path = &self.settings.save_path;
-		let mut file = ggez::filesystem::create(ctx, path).unwrap_or_else(|error|
-			panic!("Failed to open file: {}, for saving because: {}", path, error));
-		file.write_all(&toml::to_vec(&self.history).unwrap_or_else(|error|
-			panic!("Failed to serialize history for saving because: {}", error))).unwrap();
+		save_history(ctx, &self.settings, &self.history);
 		false
 	}
 
@@ -154,8 +164,8 @@ pub fn transform(ctx: &ggez::Context, (x, y): (f32, f32)) -> (f32, f32) {
 	(screen.x + (screen.w / width) * x, screen.y + (screen.h / height) * y)
 }
 
-pub fn run<F>(settings: Settings, script: F) -> ggez::GameResult
-	where F: FnOnce(&mut ggez::Context, &Settings) -> ggez::GameResult<(Script, History)> {
+pub fn run<F>(settings: Settings, mut script: F) -> ggez::GameResult
+	where F: FnMut(&mut ggez::Context, &Settings) -> ggez::GameResult<(Script, History)> {
 	let ctx = ggez::ContextBuilder::new("kanna", "kanna")
 		.window_mode(ggez::conf::WindowMode {
 			resizable: true,
@@ -168,9 +178,13 @@ pub fn run<F>(settings: Settings, script: F) -> ggez::GameResult
 	settings.resource_paths.iter().map(std::path::PathBuf::from)
 		.for_each(|path| ggez::filesystem::mount(ctx, path.as_path(), true));
 
-	let (script, history) = script(ctx, &settings)?;
-	let state = &mut GameState::load(ctx, script, settings, history);
-	event::run(ctx, event_loop, state)
+	loop {
+		let (script, history) = script(ctx, &settings)?;
+		let mut state = GameState::load(ctx, script, settings.clone(), history);
+		event::run(ctx, event_loop, &mut state)?;
+		if !state.reload { break Ok(()); }
+		ctx.continuing = true;
+	}
 }
 
 /// Loads a script from a given path. No resources are loaded.
@@ -204,6 +218,15 @@ pub fn load_history(ctx: &mut ggez::Context, settings: &Settings) -> ggez::GameR
 		let error = format!("Failed to load saved history because: {}", error);
 		ggez::GameError::ResourceLoadError(error)
 	})
+}
+
+/// Saves the game history to the path specified in the settings.
+pub fn save_history(ctx: &mut ggez::Context, settings: &Settings, history: &History) {
+	let mut file = ggez::filesystem::create(ctx, &settings.save_path).unwrap_or_else(|error|
+		panic!("Failed to open file: {}, for saving because: {}", settings.save_path, error));
+	file.write_all(&toml::to_vec(history).unwrap_or_else(|error|
+		panic!("Failed to serialize history for saving because: {}", error)))
+		.unwrap_or_else(|error| panic!("Failed to write save history to file because: {}", error))
 }
 
 /// Loads all resources that are referenced in a script.

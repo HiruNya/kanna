@@ -183,7 +183,7 @@ pub struct History {
 	pub execution_count: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Settings {
 	/// Width of the view.
 	pub width: f32,
@@ -220,6 +220,8 @@ pub struct Settings {
 	pub music_volume: f32,
 	/// Volume of sound effects that are played. The normal volume is `1.0`.
 	pub sound_volume: f32,
+	/// Enables developer mode features.
+	pub developer: bool,
 }
 
 impl Default for Settings {
@@ -241,6 +243,7 @@ impl Default for Settings {
 			save_path: "/game.save".to_owned(),
 			music_volume: 1.0,
 			sound_volume: 1.0,
+			developer: true,
 		}
 	}
 }
