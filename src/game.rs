@@ -1,25 +1,38 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::path::PathBuf;
 
-use ggez::{self, event, graphics, input};
+use ggez::{self, Context, event, graphics, input};
 
-use crate::{Characters, Command, Render, Script, ScriptState, Settings, Target};
+use crate::{Characters, Command, History, Label, Render, Script, ScriptState, Settings, Target};
 
 #[derive(Debug)]
 pub struct GameState {
 	script: Script,
 	settings: Settings,
+	history: History,
 	state: ScriptState,
 	render: Render,
 }
 
 impl GameState {
-	pub fn new(ctx: &mut ggez::Context, script: Script, settings: Settings) -> Self {
+	pub fn load(ctx: &mut ggez::Context, script: Script,
+	            settings: Settings, mut load_history: History) -> Self {
+		let history = History::default();
 		let (state, render) = (ScriptState::default(), Render::default());
-		let mut state = GameState { script, settings, state, render };
+		let mut state = GameState { script, settings, history, state, render };
+
+		load_history.divergences.reverse();
 		state.state.next_target = Some(Target::default());
-		state.advance(ctx);
+		while state.history.execution_count < load_history.execution_count {
+			match state.script[&state.state.target] {
+				Command::Diverge(_) => state.diverge(ctx,
+					&load_history.divergences.pop().unwrap()),
+				_ => state.advance(ctx),
+			}
+		}
+
+		assert!(load_history.divergences.is_empty());
 		state
 	}
 
@@ -27,6 +40,7 @@ impl GameState {
 		match &mut self.render.text {
 			Some(text) if !text.is_finished() => text.finish(),
 			_ => loop {
+				self.history.execution_count += 1;
 				self.state.target = self.state.next_target.take()
 					.unwrap_or(self.state.target.next());
 
@@ -42,6 +56,15 @@ impl GameState {
 				}
 			},
 		}
+	}
+
+	/// Jumps to a selected label in a divergence.
+	pub fn diverge(&mut self, ctx: &mut ggez::Context, label: &Label) {
+		let target = self.script.labels[label].clone();
+		self.history.divergences.push(label.clone());
+		self.state.next_target = Some(target);
+		self.render.branches.clear();
+		self.advance(ctx);
 	}
 }
 
@@ -74,14 +97,10 @@ impl event::EventHandler for GameState {
 		let (x, y) = transform(ctx, (x, y));
 		match self.script[&self.state.target] {
 			Command::Diverge(_) => {
-				for (button, label) in &self.render.branches {
-					if button.rectangle().contains([x, y]) {
-						let target = self.script.labels[&label].clone();
-						self.state.next_target = Some(target);
-						self.render.branches.clear();
-						return self.advance(ctx);
-					}
-				}
+				let label = self.render.branches.iter()
+					.find(|(button, _)| button.rectangle().contains([x, y]));
+				label.map(|(_, label)| label).cloned()
+					.map(|label| self.diverge(ctx, &label));
 			}
 			_ => self.advance(ctx),
 		}
@@ -90,6 +109,15 @@ impl event::EventHandler for GameState {
 	fn mouse_motion_event(&mut self, ctx: &mut ggez::Context, x: f32, y: f32, _: f32, _: f32) {
 		self.render.branches.iter_mut().for_each(|(button, _)|
 			button.update(transform(ctx, (x, y))));
+	}
+
+	fn quit_event(&mut self, ctx: &mut Context) -> bool {
+		let path = &self.settings.save_path;
+		let mut file = ggez::filesystem::create(ctx, path).unwrap_or_else(|error|
+			panic!("Failed to open file: {}, for saving because: {}", path, error));
+		file.write_all(&toml::to_vec(&self.history).unwrap_or_else(|error|
+			panic!("Failed to serialize history for saving because: {}", error))).unwrap();
+		false
 	}
 
 	fn resize_event(&mut self, ctx: &mut ggez::Context, width: f32, height: f32) {
@@ -127,7 +155,7 @@ pub fn transform(ctx: &ggez::Context, (x, y): (f32, f32)) -> (f32, f32) {
 }
 
 pub fn run<F>(settings: Settings, script: F) -> ggez::GameResult
-	where F: FnOnce(&mut ggez::Context) -> ggez::GameResult<Script> {
+	where F: FnOnce(&mut ggez::Context, &Settings) -> ggez::GameResult<(Script, History)> {
 	let ctx = ggez::ContextBuilder::new("kanna", "kanna")
 		.window_mode(ggez::conf::WindowMode {
 			resizable: true,
@@ -140,8 +168,8 @@ pub fn run<F>(settings: Settings, script: F) -> ggez::GameResult
 	settings.resource_paths.iter().map(std::path::PathBuf::from)
 		.for_each(|path| ggez::filesystem::mount(ctx, path.as_path(), true));
 
-	let script = script(ctx)?;
-	let state = &mut GameState::new(ctx, script, settings);
+	let (script, history) = script(ctx, &settings)?;
+	let state = &mut GameState::load(ctx, script, settings, history);
 	event::run(ctx, event_loop, state)
 }
 
@@ -168,12 +196,21 @@ pub fn read_string<P: AsRef<Path>>(ctx: &mut ggez::Context, path: P) -> ggez::Ga
 	Ok(string)
 }
 
+/// Loads the game history from the save path in the settings.
+pub fn load_history(ctx: &mut ggez::Context, settings: &Settings) -> ggez::GameResult<History> {
+	let buffer: Result<Vec<_>, _> = ggez::filesystem::open(ctx,
+		&settings.save_path)?.bytes().collect();
+	toml::from_slice(&buffer?).map_err(|error| {
+		let error = format!("Failed to load saved history because: {}", error);
+		ggez::GameError::ResourceLoadError(error)
+	})
+}
+
 /// Loads all resources that are referenced in a script.
 /// Ignores any resources that have already been loaded.
-pub fn load_resources(ctx: &mut ggez::Context, mut script: Script) -> ggez::GameResult<Script> {
-	load_images(ctx, &mut script)?;
-	load_audio(ctx, &mut script)?;
-	Ok(script)
+pub fn load_resources(ctx: &mut ggez::Context, script: &mut Script) -> ggez::GameResult {
+	load_images(ctx, script)?;
+	load_audio(ctx, script)
 }
 
 /// Loads all the images that are referenced in a script.

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use ggez::audio::{SoundData, SoundSource, Source};
 use ggez::graphics::{self, Image};
+use serde::{Deserialize, Serialize};
 
 use character::{CharacterName, Characters, Instance, InstanceName, StateName};
 use interface::{Button, Render, RenderText, TextBox};
@@ -147,7 +148,7 @@ impl Target {
 	}
 }
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct Label(pub String);
 
 #[derive(Debug, Default)]
@@ -174,6 +175,12 @@ pub struct ScriptState {
 	pub flags: HashSet<FlagName>,
 	pub music: Option<Source>,
 	pub sounds: Vec<Source>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct History {
+	pub divergences: Vec<Label>,
+	pub execution_count: usize,
 }
 
 #[derive(Debug)]
@@ -207,6 +214,8 @@ pub struct Settings {
 	pub branch_button_height: f32,
 	/// Paths to look for resource files.
 	pub resource_paths: Vec<String>,
+	/// Path to save the game history.
+	pub save_path: String,
 	/// Volume of music that is played. The normal volume is `1.0`.
 	pub music_volume: f32,
 	/// Volume of sound effects that are played. The normal volume is `1.0`.
@@ -229,6 +238,7 @@ impl Default for Settings {
 			branch_button_width: 0.3,
 			branch_button_height: 0.1,
 			resource_paths: Vec::new(),
+			save_path: "/game.save".to_owned(),
 			music_volume: 1.0,
 			sound_volume: 1.0,
 		}
