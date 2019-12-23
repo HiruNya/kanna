@@ -19,7 +19,7 @@ pub fn main() -> ggez::GameResult {
 			Command::Dialogue(Some(CharacterName("John Wick".into())),
 				"John Wick needs your credit card number and the three digits on the back so he can win this epic victory and take home the bread.".into()),
 			Command::Spawn(CharacterName("Character".into()), StateName("Happy".into()), (320.0, 240.0), None),
-			Command::Position(InstanceName("Character".into()), (540.0, 240.0)),
+			Command::Position(InstanceName("Character".into()), (540.0, 240.0), Some(AnimationDeclaration{name:"glide".into(), arguments: vec![Some(10.)]})),
 			Command::Hide(InstanceName("Character".into())),
 			Command::Show(InstanceName("Character".into())),
 			Command::Change(InstanceName("Character".into()), StateName("Sad".into())),
@@ -39,8 +39,7 @@ pub fn main() -> ggez::GameResult {
 			labels.insert(Label("bruh-moment-rest".into()), Target(11));
 			labels
 		},
-		images: HashMap::new(),
-		audio: HashMap::new(),
+		..Script::default()
 	};
 
 	kanna::game::run(script, settings)
