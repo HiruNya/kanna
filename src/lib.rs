@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use ggez::audio::{SoundData, SoundSource, Source};
 use ggez::graphics::{self, Image};
 
-use animation::{Animation, AnimationDeclaration, AnimationMap, AnimationState, InstanceParameter, PositionAnimation};
+use animation::{Animation, AnimationDeclaration, AnimationMap, AnimationState, ChangeAnimation, HideAnimation, InstanceParameter, KillAnimation, PositionAnimation, ShowAnimation, SpawnAnimation};
 
 pub mod animation;
 pub mod game;
@@ -24,23 +24,23 @@ pub struct StateName(pub String);
 #[derive(Debug)]
 pub enum Command {
 	/// Changes the state of an instance.
-	Change(InstanceName, StateName),
+	Change(InstanceName, StateName, Option<AnimationDeclaration>),
 	/// Displays text associated with a character.
 	Dialogue(Option<CharacterName>, String),
 	/// Presents the user with a list of options and jumps to a label
 	/// depending on the option that is chosen.
 	Diverge(Vec<(String, Label)>),
 	/// Makes an instance visible.
-	Show(InstanceName),
+	Show(InstanceName, Option<AnimationDeclaration>),
 	/// Makes an instance invisible.
-	Hide(InstanceName),
+	Hide(InstanceName, Option<AnimationDeclaration>),
 	/// Sets the position of an instance.
 	Position(InstanceName, (f32, f32), Option<AnimationDeclaration>),
 	/// Kills an instance.
-	Kill(InstanceName),
+	Kill(InstanceName, Option<AnimationDeclaration>),
 	/// Creates an instance of a character onto the screen at a specified position.
 	/// If no instance name is specified, the character name is used.
-	Spawn(CharacterName, StateName, (f32, f32), Option<InstanceName>),
+	Spawn(CharacterName, StateName, (f32, f32), Option<InstanceName>, Option<AnimationDeclaration>),
 	/// Sets the background image.
 	Stage(PathBuf),
 	/// Jumps directly to a label.
@@ -55,10 +55,17 @@ impl Command {
 	pub fn execute(&self, ctx: &mut ggez::Context, state: &mut ScriptState,
 	               render: &mut Render, script: &Script, settings: &Settings) {
 		match self {
-			Command::Change(instance, state) => {
+			Command::Change(instance, state, animation) => {
 				let instance = &mut render.stage[instance];
-				*instance = Instance::new(script, instance.character.clone(),
-					state, instance.position);
+				if let Some(animation) = animation {
+					let change_animation = ChangeAnimation::new(animation.arguments.clone(), &instance.character, script, state);
+					let animation = script.animations.change.get(&animation.name).unwrap_or_else(|| panic!("Error finding animation: {}", animation.name))
+						.initialise(change_animation);
+					instance.add_animation(animation);
+				} else {
+					*instance = Instance::new(script, instance.character.clone(),
+						state, instance.position);
+				}
 			}
 			Command::Dialogue(character, string) => {
 				let height = settings.height * settings.text_box_height - settings.interface_margin;
@@ -98,8 +105,22 @@ impl Command {
 						settings.background_colour, settings.secondary_colour), label.clone())
 				}).collect();
 			}
-			Command::Show(instance) => render.stage[instance].visible = true,
-			Command::Hide(instance) => render.stage[instance].visible = false,
+			Command::Show(instance, animation) => {
+				if let Some(animation) = animation {
+					let animation_producer = script.animations.show.get(&animation.name).unwrap_or_else(|| panic!("Error finding animation named: {}", animation.name));
+					render.stage[instance].add_animation(animation_producer.initialise(ShowAnimation { arguments: animation.arguments.clone() }) as Box<_>)
+				} else {
+					render.stage[instance].visible = true
+				}
+			}
+			Command::Hide(instance, animation) => {
+				if let Some(animation) = animation {
+					let animation_producer = script.animations.hide.get(&animation.name).unwrap_or_else(|| panic!("Error finding animation named: {}", animation.name));
+					render.stage[instance].add_animation(animation_producer.initialise(HideAnimation { arguments: animation.arguments.clone() }) as Box<_>)
+				} else {
+					render.stage[instance].visible = false
+				}
+			}
 			Command::Position(instance, position, animation) => {
 				if let Some(animation) = animation {
 					let position_animation = PositionAnimation {
@@ -114,12 +135,29 @@ impl Command {
 					render.stage[instance].position = *position;
 				}
 			}
-			Command::Kill(instance) => render.stage.remove(instance),
-			Command::Spawn(character, state, position, instance_name) => {
+			Command::Kill(instance, animation) => {
+				if let Some(animation) = animation {
+					let animation = script.animations.kill.get(&animation.name)
+						.unwrap_or_else(|| panic!("Error finding animation: {}", animation.name))
+						.initialise(KillAnimation{ arguments: animation.arguments.clone() });
+					render.stage[instance].add_animation(animation);
+					render.stage[instance].tbk = true;
+				} else {
+					render.stage.remove(instance)
+				}
+			}
+			Command::Spawn(character, state, position, instance_name, animation) => {
 				let CharacterName(character_name) = character;
 				let instance = Instance::new(script, character.clone(), state, *position);
-				render.stage.spawn(instance_name.clone().unwrap_or_else(||
-					InstanceName(character_name.clone())), instance);
+				let instance_name = instance_name.clone().unwrap_or_else(||
+					InstanceName(character_name.clone()));
+				render.stage.spawn(instance_name.clone(), instance);
+				if let Some(animation) = animation {
+					let animation = script.animations.spawn.get(&animation.name)
+						.unwrap_or_else(|| panic!("Error finding animation named `{}`", animation.name))
+						.initialise(SpawnAnimation{ arguments: animation.arguments.clone() });
+					render.stage[&instance_name].add_animation(animation);
+				}
 			}
 			Command::Stage(path) => render.background = Some(script.images[path].clone()),
 			Command::Jump(label) => state.next_target = Some(script.labels[label].clone()),
@@ -434,6 +472,10 @@ pub struct Instance {
 	pub scale: (f32, f32),
 	/// Whether the instance is visible.
 	pub visible: bool,
+	/// The colour of the image.
+	pub colour: [f32; 4],
+	/// 'To Be Killed' - Whether this instance should be removed after the animation finished.
+	pub tbk: bool,
 }
 
 impl Instance {
@@ -444,7 +486,7 @@ impl Instance {
 			panic!("Image at path: {:?}, is not loaded", &state.image)).clone();
 		let centre_position = state.centre_position.map(|(x, y)| (x as f32, y as f32))
 			.unwrap_or_else(|| (image.width() as f32 / 2.0, image.height() as f32 / 2.0));
-		Instance { animation: None, character, centre_position, image, position, scale: state.scale, visible: true }
+		Instance { animation: None, character, centre_position, colour: [1.0; 4], image, position, scale: state.scale, visible: true, tbk: false }
 	}
 
 	/// The instance progresses any animation it contains.
@@ -472,7 +514,8 @@ impl Instance {
 		let draw_params = graphics::DrawParam::new()
 			.dest([position_x, position_y])
 			.offset([offset_x, offset_y])
-			.scale([scale_x, scale_y]);
+			.scale([scale_x, scale_y])
+			.color(self.colour.into());
 		graphics::draw(ctx, &self.image, draw_params)
 	}
 
@@ -499,18 +542,22 @@ impl Instance {
 	fn create_parameter(&self) -> InstanceParameter {
 		InstanceParameter {
 			centre_position: self.centre_position,
+			image: self.image.clone(),
 			position: self.position,
 			scale: self.scale,
 			visible: self.visible,
+			colour: self.colour,
 		}
 	}
 
 	/// Uses a parameter to update the Instance's own values.
 	fn update_with_parameter(&mut self, parameters: InstanceParameter) {
 		self.centre_position = parameters.centre_position;
+		self.image = parameters.image;
 		self.position = parameters.position;
 		self.scale = parameters.scale;
 		self.visible = parameters.visible;
+		self.colour = parameters.colour;
 	}
 }
 
@@ -547,7 +594,10 @@ impl Stage {
 	/// Finishes any animations that are currently on the instances.
 	pub fn finish_animation(&mut self) {
 		let Stage(stage) = self;
-		stage.values_mut().for_each(|instance| instance.finish_animation());
+		stage.retain(|_, instance| {
+			instance.finish_animation();
+			!instance.tbk
+		})
 	}
 }
 
