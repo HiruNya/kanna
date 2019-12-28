@@ -19,7 +19,7 @@ pub fn main() -> ggez::GameResult {
 			Command::Dialogue(Some(CharacterName("John Wick".into())),
 				"John Wick needs your credit card number and the three digits on the back so he can win this epic victory and take home the bread.".into()),
 			Command::Spawn(CharacterName("Character".into()), StateName("Happy".into()), (320.0, 240.0), None, AnimationDeclaration{name: "fade".into(), arguments: vec![Some(250.0)]}.into()),
-			Command::Position(InstanceName("Character".into()), (540.0, 240.0), Some(AnimationDeclaration{name:"glide".into(), arguments: vec![Some(10.)]})),
+			Command::Position(InstanceName("Character".into()), (540.0, 240.0), Some(AnimationDeclaration{name:"glide".into(), arguments: vec![Some(10_000.)]})),
 			Command::Hide(InstanceName("Character".into()), AnimationDeclaration{ name:"fade".into(), arguments: vec![Some(250.)]}.into()),
 			Command::Show(InstanceName("Character".into()), AnimationDeclaration{ name:"fade".into(), arguments: vec![Some(250.)]}.into()),
 			Command::Change(InstanceName("Character".into()), StateName("Sad".into()), AnimationDeclaration{name: "flip".into(), arguments: vec![Some(100.0)]}.into()),
