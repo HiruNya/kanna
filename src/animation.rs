@@ -106,6 +106,8 @@ pub struct PositionAnimation {
 /// When the animation finishes, the visibility of the [`Instance`]
 /// **MUST** be set to `true`
 pub struct ShowAnimation {
+	/// The dimensions of the view.
+	pub view_dimensions: (f32, f32),
 	/// Extra arguments provided to the Animation.
 	pub arguments: Vec<Option<f32>>,
 }
@@ -115,18 +117,24 @@ pub struct ShowAnimation {
 /// When the animation finishes, the visibility of the [`Instance`]
 /// **MUST** be set to `false`
 pub struct HideAnimation {
+	/// The dimensions of the view.
+	pub view_dimensions: (f32, f32),
 	/// Extra arguments provided to the Animation.
 	pub arguments: Vec<Option<f32>>,
 }
 
 /// An animation that is used on the `Spawn` Command will take in this struct.
 pub struct SpawnAnimation {
+	/// The dimensions of the view.
+	pub view_dimensions: (f32, f32),
 	/// Extra arguments provided to the Animation.
 	pub arguments: Vec<Option<f32>>,
 }
 
 /// An animation that is used on the `Kill` Command will take in this struct.
 pub struct KillAnimation {
+	/// The dimensions of the view.
+	pub view_dimensions: (f32, f32),
 	/// Extra arguments provided to the Animation.
 	pub arguments: Vec<Option<f32>>,
 }
@@ -184,7 +192,7 @@ impl AnimationProducer<ShowAnimation> for Glide {
 			d if d == 0.0 => GlideVisibilityDirection::Left,
 			_ => GlideVisibilityDirection::Left,
 		};
-		Box::new(GlideVisibility::Uninitialised(true, time_period, direction))
+		Box::new(GlideVisibility::Uninitialised{ visible: true, time_period, direction, view_dimensions: animation.view_dimensions })
 	}
 }
 impl AnimationProducer<HideAnimation> for Glide {
@@ -197,7 +205,7 @@ impl AnimationProducer<HideAnimation> for Glide {
 			d if d == 0.0 => GlideVisibilityDirection::Left,
 			_ => GlideVisibilityDirection::Left,
 		};
-		Box::new(GlideVisibility::Uninitialised(false, time_period, direction))
+		Box::new(GlideVisibility::Uninitialised{ visible: false, time_period, direction, view_dimensions: animation.view_dimensions })
 	}
 }
 impl AnimationProducer<SpawnAnimation> for Glide {
@@ -210,7 +218,7 @@ impl AnimationProducer<SpawnAnimation> for Glide {
 			d if d == 0.0 => GlideVisibilityDirection::Left,
 			_ => GlideVisibilityDirection::Left,
 		};
-		Box::new(GlideVisibility::Uninitialised(true, time_period, direction))
+		Box::new(GlideVisibility::Uninitialised{ visible: true, time_period, direction, view_dimensions: animation.view_dimensions })
 	}
 }
 impl AnimationProducer<KillAnimation> for Glide {
@@ -223,7 +231,7 @@ impl AnimationProducer<KillAnimation> for Glide {
 			d if d == 0.0 => GlideVisibilityDirection::Left,
 			_ => GlideVisibilityDirection::Left,
 		};
-		Box::new(GlideVisibility::Uninitialised(true, time_period, direction))
+		Box::new(GlideVisibility::Uninitialised{ visible: true, time_period, direction, view_dimensions: animation.view_dimensions })
 	}
 }
 
@@ -262,7 +270,7 @@ impl Animation<InstanceParameter> for GlideMove {
 
 #[derive(Debug)]
 enum GlideVisibility {
-	Uninitialised(bool, f32, GlideVisibilityDirection),
+	Uninitialised{ visible: bool, time_period: f32, direction: GlideVisibilityDirection, view_dimensions: (f32, f32) },
 	Initialised(bool, GlideMove, (f32, f32)),
 }
 
@@ -274,7 +282,7 @@ enum GlideVisibilityDirection {
 
 impl GlideVisibility {
 	fn initialise(&mut self, parameter: &mut InstanceParameter) {
-		if let GlideVisibility::Uninitialised(visible, time_period, direction) = self {
+		if let GlideVisibility::Uninitialised{ visible, time_period, direction, view_dimensions } = self {
 			let width = parameter.image.width() as f32;
 			let destination_x;
 			let original_x = parameter.position.0;
@@ -282,18 +290,12 @@ impl GlideVisibility {
 				destination_x = original_x;
 				parameter.position.0 = match direction {
 					GlideVisibilityDirection::Left => -(width-parameter.centre_position.0),
-					GlideVisibilityDirection::Right => {
-						let screen_width = 640.0; // To Do: This value is currently hard coded to be the same as Settings::default.
-						screen_width + width - parameter.centre_position.0
-					}
+					GlideVisibilityDirection::Right => view_dimensions.0 + width - parameter.centre_position.0,
 				};
 			} else {
 				destination_x = match direction {
 					GlideVisibilityDirection::Left => -(width-parameter.centre_position.0),
-					GlideVisibilityDirection::Right => {
-						let screen_width = 640.0; // To Do: This value is currently hard coded to be the same as Settings::default.
-						screen_width + width - parameter.centre_position.0
-					}
+					GlideVisibilityDirection::Right => view_dimensions.0 + width - parameter.centre_position.0,
 				};
 			}
 			*self = GlideVisibility::Initialised(*visible, GlideMove {
@@ -307,7 +309,7 @@ impl Animation<InstanceParameter> for GlideVisibility {
 	fn update(&mut self, parameter: &mut InstanceParameter, ctx: &mut ggez::Context) -> AnimationState {
 		parameter.visible = true;
 		match self {
-			GlideVisibility::Uninitialised(_, _, _) => {
+			GlideVisibility::Uninitialised{..} => {
 				self.initialise(parameter);
 				self.update(parameter, ctx)
 			}
@@ -316,7 +318,7 @@ impl Animation<InstanceParameter> for GlideVisibility {
 	}
 	fn finish(&self, parameter: &mut InstanceParameter) {
 		parameter.visible = match self {
-			GlideVisibility::Initialised(visible, _, _) | GlideVisibility::Uninitialised(visible, _, _) => *visible,
+			GlideVisibility::Initialised(visible, _, _) | GlideVisibility::Uninitialised{visible, ..} => *visible,
 		};
 		if let GlideVisibility::Initialised(_, _, position) = self {
 			parameter.position = *position;

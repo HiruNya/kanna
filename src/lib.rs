@@ -108,7 +108,7 @@ impl Command {
 			Command::Show(instance, animation) => {
 				if let Some(animation) = animation {
 					let animation_producer = script.animations.show.get(&animation.name).unwrap_or_else(|| panic!("Error finding animation named: {}", animation.name));
-					render.stage[instance].add_animation(animation_producer.initialise(ShowAnimation { arguments: animation.arguments.clone() }) as Box<_>)
+					render.stage[instance].add_animation(animation_producer.initialise(ShowAnimation { arguments: animation.arguments.clone(), view_dimensions: (settings.width, settings.height) }) as Box<_>)
 				} else {
 					render.stage[instance].visible = true
 				}
@@ -116,7 +116,7 @@ impl Command {
 			Command::Hide(instance, animation) => {
 				if let Some(animation) = animation {
 					let animation_producer = script.animations.hide.get(&animation.name).unwrap_or_else(|| panic!("Error finding animation named: {}", animation.name));
-					render.stage[instance].add_animation(animation_producer.initialise(HideAnimation { arguments: animation.arguments.clone() }) as Box<_>)
+					render.stage[instance].add_animation(animation_producer.initialise(HideAnimation { arguments: animation.arguments.clone(), view_dimensions: (settings.width, settings.height)  }) as Box<_>)
 				} else {
 					render.stage[instance].visible = false
 				}
@@ -139,7 +139,7 @@ impl Command {
 				if let Some(animation) = animation {
 					let animation = script.animations.kill.get(&animation.name)
 						.unwrap_or_else(|| panic!("Error finding animation: {}", animation.name))
-						.initialise(KillAnimation{ arguments: animation.arguments.clone() });
+						.initialise(KillAnimation{ arguments: animation.arguments.clone(), view_dimensions: (settings.width, settings.height)  });
 					render.stage[instance].add_animation(animation);
 					render.stage[instance].tbk = true;
 				} else {
@@ -155,7 +155,7 @@ impl Command {
 				if let Some(animation) = animation {
 					let animation = script.animations.spawn.get(&animation.name)
 						.unwrap_or_else(|| panic!("Error finding animation named `{}`", animation.name))
-						.initialise(SpawnAnimation{ arguments: animation.arguments.clone() });
+						.initialise(SpawnAnimation{ arguments: animation.arguments.clone(), view_dimensions: (settings.width, settings.height)  });
 					render.stage[&instance_name].add_animation(animation);
 				}
 			}
