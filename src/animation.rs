@@ -1,10 +1,12 @@
+use std::{collections::HashMap, fmt::Debug};
+
 use ggez::{self, graphics::Image, timer};
 
-use std::{collections::HashMap, fmt::Debug};
+type TransitionMap<T> = HashMap<String, Box<dyn AnimationProducer<T, Parameter=InstanceParameter>>>;
 
 /// An animation that acts on a struct to provide a visual effect.
 pub trait Animation<A>: Debug {
-	fn update(&mut self,  _: &mut A, _: &mut ggez::Context) -> AnimationState;
+	fn update(&mut self, _: &mut A, _: &mut ggez::Context) -> AnimationState;
 	fn finish(&self, _: &mut A);
 }
 
@@ -14,25 +16,27 @@ pub trait Animation<A>: Debug {
 /// The `Parameter` type is the type of parameter the animation will accept.
 pub trait AnimationProducer<A>: Debug {
 	type Parameter;
+
 	fn initialise(&self, _: A) -> Box<dyn Animation<Self::Parameter>>;
 }
 
-/// Stores all the [`AnimationProducer`]s, to be used at runtime.
+/// Stores all the [`AnimationProducer`]s to be used at runtime.
 #[derive(Debug)]
 pub struct AnimationMap {
 	/// Transitions that can be used for a `Change` Command.
-	pub change: HashMap<String, Box<dyn AnimationProducer<ChangeAnimation, Parameter=InstanceParameter>>>,
+	pub change: TransitionMap<ChangeAnimation>,
 	/// Transitions that can be used for a `Position` Command.
-	pub position: HashMap<String, Box<dyn AnimationProducer<PositionAnimation, Parameter=InstanceParameter>>>,
+	pub position: TransitionMap<PositionAnimation>,
 	/// Transitions that can be used for a `Show` Command.
-	pub show: HashMap<String, Box<dyn AnimationProducer<ShowAnimation, Parameter=InstanceParameter>>>,
+	pub show: TransitionMap<ShowAnimation>,
 	/// Transitions that can be used for a `Hide` Command.
-	pub hide: HashMap<String, Box<dyn AnimationProducer<HideAnimation, Parameter=InstanceParameter>>>,
+	pub hide: TransitionMap<HideAnimation>,
 	/// Transitions that can be used for a `Spawn` Command.
-	pub spawn: HashMap<String, Box<dyn AnimationProducer<SpawnAnimation, Parameter=InstanceParameter>>>,
+	pub spawn: TransitionMap<SpawnAnimation>,
 	/// Transitions that can be used for a `Kill` Command.
-	pub kill: HashMap<String, Box<dyn AnimationProducer<KillAnimation, Parameter=InstanceParameter>>>,
+	pub kill: TransitionMap<KillAnimation>,
 }
+
 impl Default for AnimationMap {
 	fn default() -> Self {
 		let mut change = HashMap::with_capacity(1);
@@ -62,7 +66,7 @@ pub struct AnimationDeclaration {
 	pub name: String,
 	/// A variable number of arguments that the animation will process.
 	/// It is up to the animation writer to determine what the arguments are used for.
-	pub arguments: Vec<Option<f32>>
+	pub arguments: Vec<Option<f32>>,
 }
 
 /// The state of the animation.
@@ -70,7 +74,7 @@ pub enum AnimationState {
 	/// The animation is ongoing.
 	Continue,
 	/// The animation has finished and should be removed.
-	Finished
+	Finished,
 }
 
 /// A parameter that represents the values of an [`Instance`] that will be given to an [`Animation`].
@@ -155,84 +159,73 @@ pub struct ChangeAnimation {
 	/// Extra arguments provided to the Animation.
 	pub arguments: Vec<Option<f32>>,
 }
+
 impl ChangeAnimation {
-	pub fn new(arguments: Vec<Option<f32>>, character: &super::CharacterName, script: &super::Script, state: &super::StateName) -> Self {
+	pub fn new(arguments: Vec<Option<f32>>, character: &super::CharacterName,
+	           script: &super::Script, state: &super::StateName) -> Self {
 		let state = &script.characters[(character, state)];
 		let new_image = script.images.get(&state.image).unwrap_or_else(||
 			panic!("Image at path: {:?}, is not loaded", &state.image)).clone();
 		let new_centre_position = state.centre_position.map(|(x, y)| (x as f32, y as f32))
 			.unwrap_or_else(|| (new_image.width() as f32 / 2.0, new_image.height() as f32 / 2.0));
-		let new_scale = state.scale;
-		Self {
-			new_centre_position,
-			new_image,
-			new_scale,
-			arguments,
-		}
+		Self { new_centre_position, new_image, new_scale: state.scale, arguments }
 	}
 }
 
 /// A Glide animation.
 #[derive(Clone, Debug, Default)]
 pub struct Glide;
+
 impl AnimationProducer<PositionAnimation> for Glide {
 	type Parameter = InstanceParameter;
+
 	fn initialise(&self, animation: PositionAnimation) -> Box<dyn Animation<Self::Parameter>> {
-        let time_period = animation.arguments.first().and_then(|period| *period).unwrap_or(10_000.0);
-		Box::new(GlideMove{ destination: animation.destination, time_period })
+		let time_period = animation.arguments.first().and_then(|period| *period).unwrap_or(10000.0);
+		Box::new(GlideMove { destination: animation.destination, time_period })
 	}
 }
+
 impl AnimationProducer<ShowAnimation> for Glide {
 	type Parameter = InstanceParameter;
+
 	fn initialise(&self, animation: ShowAnimation) -> Box<dyn Animation<Self::Parameter>> {
-		let time_period = animation.arguments.first().and_then(|period| *period).unwrap_or(10_000.0);
-		// 0 is Left, 1 is Right, and it is 0 by default.
-		let direction = match animation.arguments.get(1).and_then(|direction| *direction).unwrap_or(0.0) {
-			d if d == 1.0 => GlideVisibilityDirection::Right,
-			d if d == 0.0 => GlideVisibilityDirection::Left,
-			_ => GlideVisibilityDirection::Left,
-		};
-		Box::new(GlideVisibility::Uninitialised{ visible: true, time_period, direction, view_dimensions: animation.view_dimensions })
+		glide_visibility(&animation.arguments, true, animation.view_dimensions)
 	}
 }
+
 impl AnimationProducer<HideAnimation> for Glide {
 	type Parameter = InstanceParameter;
+
 	fn initialise(&self, animation: HideAnimation) -> Box<dyn Animation<Self::Parameter>> {
-		let time_period = animation.arguments.first().and_then(|period| *period).unwrap_or(10_000.0);
-		// 0 is Left, 1 is Right, and it is 0 by default.
-		let direction = match animation.arguments.get(1).and_then(|direction| *direction).unwrap_or(0.0) {
-			d if d == 1.0 => GlideVisibilityDirection::Right,
-			d if d == 0.0 => GlideVisibilityDirection::Left,
-			_ => GlideVisibilityDirection::Left,
-		};
-		Box::new(GlideVisibility::Uninitialised{ visible: false, time_period, direction, view_dimensions: animation.view_dimensions })
+		glide_visibility(&animation.arguments, false, animation.view_dimensions)
 	}
 }
+
 impl AnimationProducer<SpawnAnimation> for Glide {
 	type Parameter = InstanceParameter;
+
 	fn initialise(&self, animation: SpawnAnimation) -> Box<dyn Animation<Self::Parameter>> {
-		let time_period = animation.arguments.first().and_then(|period| *period).unwrap_or(10_000.0);
-		// 0 is Left, 1 is Right, and it is 0 by default.
-		let direction = match animation.arguments.get(1).and_then(|direction| *direction).unwrap_or(0.0) {
-			d if d == 1.0 => GlideVisibilityDirection::Right,
-			d if d == 0.0 => GlideVisibilityDirection::Left,
-			_ => GlideVisibilityDirection::Left,
-		};
-		Box::new(GlideVisibility::Uninitialised{ visible: true, time_period, direction, view_dimensions: animation.view_dimensions })
+		glide_visibility(&animation.arguments, true, animation.view_dimensions)
 	}
 }
+
 impl AnimationProducer<KillAnimation> for Glide {
 	type Parameter = InstanceParameter;
+
 	fn initialise(&self, animation: KillAnimation) -> Box<dyn Animation<Self::Parameter>> {
-		let time_period = animation.arguments.first().and_then(|period| *period).unwrap_or(10_000.0);
-		// 0 is Left, 1 is Right, and it is 0 by default.
-		let direction = match animation.arguments.get(1).and_then(|direction| *direction).unwrap_or(0.0) {
-			d if d == 1.0 => GlideVisibilityDirection::Right,
-			d if d == 0.0 => GlideVisibilityDirection::Left,
-			_ => GlideVisibilityDirection::Left,
-		};
-		Box::new(GlideVisibility::Uninitialised{ visible: true, time_period, direction, view_dimensions: animation.view_dimensions })
+		glide_visibility(&animation.arguments, true, animation.view_dimensions)
 	}
+}
+
+fn glide_visibility(arguments: &[Option<f32>], visible: bool,
+                    view_dimensions: (f32, f32)) -> Box<GlideVisibility> {
+	let time_period = arguments.first().and_then(|period| *period).unwrap_or(10000.0);
+	let direction = match arguments.get(1).and_then(|direction| *direction).unwrap_or(0.0) {
+		d if d == 1.0 => GlideVisibilityDirection::Right,
+		_ => GlideVisibilityDirection::Left,
+	};
+
+	Box::new(GlideVisibility::Uninitialised { visible, time_period, direction, view_dimensions })
 }
 
 #[derive(Debug)]
@@ -240,18 +233,19 @@ struct GlideMove {
 	destination: (f32, f32),
 	time_period: f32,
 }
+
 impl Animation<InstanceParameter> for GlideMove {
-	fn update(&mut self,  parameters: &mut InstanceParameter, ctx: &mut ggez::Context) -> AnimationState {
+	fn update(&mut self, parameters: &mut InstanceParameter, ctx: &mut ggez::Context) -> AnimationState {
 		let delta_time = (timer::duration_to_f64(timer::delta(ctx)) * 1_000.0) as f32;
 		let time_left = self.time_period - delta_time;
-		if self.time_period > 0. {
+		if self.time_period > 0.0 {
 			let position_difference = (
 				self.destination.0 - parameters.position.0,
 				self.destination.1 - parameters.position.1
 			);
 			let position_delta = (
-				position_difference.0 / time_left * 1_000.0,
-				position_difference.1 / time_left * 1_000.0
+				position_difference.0 / time_left * 1000.0,
+				position_difference.1 / time_left * 1000.0
 			);
 			parameters.position = (
 				parameters.position.0 + position_delta.0,
@@ -263,6 +257,7 @@ impl Animation<InstanceParameter> for GlideMove {
 			AnimationState::Finished
 		}
 	}
+
 	fn finish(&self, parameters: &mut InstanceParameter) {
 		parameters.position = self.destination;
 	}
@@ -270,7 +265,7 @@ impl Animation<InstanceParameter> for GlideMove {
 
 #[derive(Debug)]
 enum GlideVisibility {
-	Uninitialised{ visible: bool, time_period: f32, direction: GlideVisibilityDirection, view_dimensions: (f32, f32) },
+	Uninitialised { visible: bool, time_period: f32, direction: GlideVisibilityDirection, view_dimensions: (f32, f32) },
 	Initialised(bool, GlideMove, (f32, f32)),
 }
 
@@ -282,19 +277,19 @@ enum GlideVisibilityDirection {
 
 impl GlideVisibility {
 	fn initialise(&mut self, parameter: &mut InstanceParameter) {
-		if let GlideVisibility::Uninitialised{ visible, time_period, direction, view_dimensions } = self {
+		if let GlideVisibility::Uninitialised { visible, time_period, direction, view_dimensions } = self {
 			let width = parameter.image.width() as f32;
 			let destination_x;
 			let original_x = parameter.position.0;
 			if *visible {
 				destination_x = original_x;
 				parameter.position.0 = match direction {
-					GlideVisibilityDirection::Left => -(width-parameter.centre_position.0),
+					GlideVisibilityDirection::Left => -(width - parameter.centre_position.0),
 					GlideVisibilityDirection::Right => view_dimensions.0 + width - parameter.centre_position.0,
 				};
 			} else {
 				destination_x = match direction {
-					GlideVisibilityDirection::Left => -(width-parameter.centre_position.0),
+					GlideVisibilityDirection::Left => -(width - parameter.centre_position.0),
 					GlideVisibilityDirection::Right => view_dimensions.0 + width - parameter.centre_position.0,
 				};
 			}
@@ -305,21 +300,25 @@ impl GlideVisibility {
 		}
 	}
 }
+
 impl Animation<InstanceParameter> for GlideVisibility {
 	fn update(&mut self, parameter: &mut InstanceParameter, ctx: &mut ggez::Context) -> AnimationState {
 		parameter.visible = true;
 		match self {
-			GlideVisibility::Uninitialised{..} => {
+			GlideVisibility::Uninitialised { .. } => {
 				self.initialise(parameter);
 				self.update(parameter, ctx)
 			}
 			GlideVisibility::Initialised(_, glide_move, _) => glide_move.update(parameter, ctx),
 		}
 	}
+
 	fn finish(&self, parameter: &mut InstanceParameter) {
 		parameter.visible = match self {
-			GlideVisibility::Initialised(visible, _, _) | GlideVisibility::Uninitialised{visible, ..} => *visible,
+			GlideVisibility::Initialised(visible, _, _) |
+			GlideVisibility::Uninitialised { visible, .. } => *visible,
 		};
+
 		if let GlideVisibility::Initialised(_, _, position) = self {
 			parameter.position = *position;
 		}
@@ -328,37 +327,44 @@ impl Animation<InstanceParameter> for GlideVisibility {
 
 #[derive(Debug)]
 pub struct Fade;
+
 impl AnimationProducer<ShowAnimation> for Fade {
 	type Parameter = InstanceParameter;
+
 	fn initialise(&self, parameters: ShowAnimation) -> Box<dyn Animation<Self::Parameter>> {
-		let time_period = parameters.arguments.first().and_then(|period| *period).unwrap_or(250.0);
-		let rate = time_period.recip();
-		Box::new(FadeVisibility { alpha: 0.0, time_period, rate, visibility: true }) as Box<_>
+		fade_animation(&parameters.arguments, 0.0, true)
 	}
 }
+
 impl AnimationProducer<HideAnimation> for Fade {
 	type Parameter = InstanceParameter;
+
 	fn initialise(&self, parameters: HideAnimation) -> Box<dyn Animation<Self::Parameter>> {
-		let time_period = parameters.arguments.first().and_then(|period| *period).unwrap_or(250.0);
-		let rate = -time_period.recip();
-		Box::new(FadeVisibility { alpha: 1.0, time_period, rate, visibility: false }) as Box<_>
+		fade_animation(&parameters.arguments, 1.0, false)
 	}
 }
+
 impl AnimationProducer<SpawnAnimation> for Fade {
 	type Parameter = InstanceParameter;
+
 	fn initialise(&self, parameters: SpawnAnimation) -> Box<dyn Animation<Self::Parameter>> {
-		let time_period = parameters.arguments.first().and_then(|period| *period).unwrap_or(250.0);
-		let rate = time_period.recip();
-		Box::new(FadeVisibility { alpha: 0.0, time_period, rate, visibility: true }) as Box<_>
+		fade_animation(&parameters.arguments, 0.0, true)
 	}
 }
+
 impl AnimationProducer<KillAnimation> for Fade {
 	type Parameter = InstanceParameter;
+
 	fn initialise(&self, parameters: KillAnimation) -> Box<dyn Animation<Self::Parameter>> {
-		let time_period = parameters.arguments.first().and_then(|period| *period).unwrap_or(250.0);
-		let rate = -time_period.recip();
-		Box::new(FadeVisibility { alpha: 1.0, time_period, rate, visibility: false }) as Box<_>
+		fade_animation(&parameters.arguments, 1.0, false)
 	}
+}
+
+fn fade_animation(arguments: &[Option<f32>], alpha: f32, visibility: bool) -> Box<FadeVisibility> {
+	let time_period = arguments.first()
+		.and_then(|period| *period).unwrap_or(250.0);
+	let rate = -time_period.recip();
+	Box::new(FadeVisibility { alpha, time_period, rate, visibility })
 }
 
 /// An animation that works for both the Show and Hide command.
@@ -373,6 +379,7 @@ struct FadeVisibility {
 	/// The current alpha value of the instance.
 	alpha: f32,
 }
+
 impl Animation<InstanceParameter> for FadeVisibility {
 	fn update(&mut self, parameter: &mut InstanceParameter, ctx: &mut ggez::Context) -> AnimationState {
 		let delta_time = (timer::duration_to_f64(timer::delta(ctx)) * 1_000.0) as f32;
@@ -394,13 +401,14 @@ impl Animation<InstanceParameter> for FadeVisibility {
 
 #[derive(Debug)]
 pub struct Flip;
+
 impl AnimationProducer<ChangeAnimation> for Flip {
 	type Parameter = InstanceParameter;
 	fn initialise(&self, parameter: ChangeAnimation) -> Box<dyn Animation<Self::Parameter>> {
-		let ChangeAnimation{ new_centre_position, new_image, new_scale, arguments } = parameter;
+		let ChangeAnimation { new_centre_position, new_image, new_scale, arguments } = parameter;
 		let time_period = arguments.first().and_then(|o| *o).unwrap_or(100.0);
-		let time_left = time_period;
-		Box::new(FlipChange{ time_period, time_left, new_centre_position, new_image, new_scale, original_scale: None })
+		let (time_left, original_scale) = (time_period, None);
+		Box::new(FlipChange { time_period, time_left, new_centre_position, new_image, new_scale, original_scale })
 	}
 }
 
@@ -413,27 +421,31 @@ struct FlipChange {
 	new_scale: (f32, f32),
 	original_scale: Option<(f32, f32)>,
 }
+
 impl Animation<InstanceParameter> for FlipChange {
 	fn update(&mut self, parameter: &mut InstanceParameter, ctx: &mut ggez::Context) -> AnimationState {
 		if self.original_scale.is_none() {
 			self.original_scale = Some(parameter.scale);
 		}
+
 		let delta_time = (timer::duration_to_f64(timer::delta(ctx)) * 1_000.0) as f32;
 		if self.time_left > 0.0 {
 			self.time_left -= delta_time;
-			if self.time_left<= 0.0 {
+			if self.time_left <= 0.0 {
 				parameter.image = self.new_image.clone();
 				parameter.centre_position = self.new_centre_position;
 				self.original_scale = Some(self.new_scale);
 			}
 		} else if self.time_left <= -self.time_period {
-			return AnimationState::Finished
+			return AnimationState::Finished;
 		} else {
 			self.time_left -= delta_time;
 		}
+
 		parameter.scale.0 = self.original_scale.unwrap().0 * self.time_left.abs() / self.time_period;
 		AnimationState::Continue
 	}
+
 	fn finish(&self, parameter: &mut InstanceParameter) {
 		parameter.image = self.new_image.clone();
 		parameter.centre_position = self.new_centre_position;

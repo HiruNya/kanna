@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use ggez::audio::{SoundData, SoundSource, Source};
 use ggez::graphics::{self, Image};
 
-use animation::{Animation, AnimationDeclaration, AnimationMap, AnimationState, ChangeAnimation, HideAnimation, InstanceParameter, KillAnimation, PositionAnimation, ShowAnimation, SpawnAnimation};
+use animation::*;
 
 pub mod animation;
 pub mod game;
@@ -116,7 +116,7 @@ impl Command {
 			Command::Hide(instance, animation) => {
 				if let Some(animation) = animation {
 					let animation_producer = script.animations.hide.get(&animation.name).unwrap_or_else(|| panic!("Error finding animation named: {}", animation.name));
-					render.stage[instance].add_animation(animation_producer.initialise(HideAnimation { arguments: animation.arguments.clone(), view_dimensions: (settings.width, settings.height)  }) as Box<_>)
+					render.stage[instance].add_animation(animation_producer.initialise(HideAnimation { arguments: animation.arguments.clone(), view_dimensions: (settings.width, settings.height) }) as Box<_>)
 				} else {
 					render.stage[instance].visible = false
 				}
@@ -139,7 +139,7 @@ impl Command {
 				if let Some(animation) = animation {
 					let animation = script.animations.kill.get(&animation.name)
 						.unwrap_or_else(|| panic!("Error finding animation: {}", animation.name))
-						.initialise(KillAnimation{ arguments: animation.arguments.clone(), view_dimensions: (settings.width, settings.height)  });
+						.initialise(KillAnimation { arguments: animation.arguments.clone(), view_dimensions: (settings.width, settings.height) });
 					render.stage[instance].add_animation(animation);
 					render.stage[instance].tbk = true;
 				} else {
@@ -155,7 +155,7 @@ impl Command {
 				if let Some(animation) = animation {
 					let animation = script.animations.spawn.get(&animation.name)
 						.unwrap_or_else(|| panic!("Error finding animation named `{}`", animation.name))
-						.initialise(SpawnAnimation{ arguments: animation.arguments.clone(), view_dimensions: (settings.width, settings.height)  });
+						.initialise(SpawnAnimation { arguments: animation.arguments.clone(), view_dimensions: (settings.width, settings.height) });
 					render.stage[&instance_name].add_animation(animation);
 				}
 			}
