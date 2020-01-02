@@ -62,7 +62,7 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			"change" => {
 				let instance = InstanceName(inline(lexer.string())?);
 				let state = StateName(inline(lexer.string())?);
-				script.commands.push(Command::Change(instance, state));
+				script.commands.push(Command::Change(instance, state, None));
 			}
 			"diverge" => {
 				inline(lexer.expect(Token::Terminator))?;
@@ -75,7 +75,7 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			}
 			"position" => {
 				let instance = InstanceName(inline(lexer.string())?);
-				script.commands.push(Command::Position(instance, position(lexer)?));
+				script.commands.push(Command::Position(instance, position(lexer)?, None));
 			}
 			"spawn" => {
 				let character = CharacterName(inline(lexer.string())?);
@@ -87,7 +87,7 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 						None | Some(Token::Terminator) => None,
 						Some(Token::String(string)) => Some(InstanceName(string)),
 						Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
-					}));
+					}, None));
 			}
 			"if" => {
 				let flag = FlagName(inline(lexer.identifier())?);
@@ -96,9 +96,9 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			"pause" => script.commands.push(Command::Pause),
 			"flag" => script.commands.push(Command::Flag(FlagName(inline(lexer.identifier())?))),
 			"unflag" => script.commands.push(Command::Unflag(FlagName(inline(lexer.identifier())?))),
-			"kill" => script.commands.push(Command::Kill(InstanceName(inline(lexer.string())?))),
-			"show" => script.commands.push(Command::Show(InstanceName(inline(lexer.string())?))),
-			"hide" => script.commands.push(Command::Hide(InstanceName(inline(lexer.string())?))),
+			"kill" => script.commands.push(Command::Kill(InstanceName(inline(lexer.string())?), None)),
+			"show" => script.commands.push(Command::Show(InstanceName(inline(lexer.string())?), None)),
+			"hide" => script.commands.push(Command::Hide(InstanceName(inline(lexer.string())?), None)),
 			"stage" => script.commands.push(Command::Stage(inline(lexer.string())?.into())),
 			"jump" => script.commands.push(Command::Jump(Label(inline(lexer.identifier())?))),
 			"music" => script.commands.push(Command::Music(inline(lexer.string())?.into())),

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use ggez::graphics;
 use serde::Deserialize;
 
-use crate::Script;
+use crate::{animation::{Animation, AnimationState, InstanceParameter}, Script};
 
 #[derive(Debug, Deserialize, Clone, Hash, Eq, PartialEq)]
 #[serde(transparent)]
@@ -58,6 +58,8 @@ impl CharacterState {
 /// A character that has been spawned onto the screen.
 #[derive(Debug)]
 pub struct Instance {
+	/// An animation acting on the instance.
+	pub animation: Option<Box<dyn Animation<InstanceParameter>>>,
 	/// Character which this instance belongs to.
 	pub character: CharacterName,
 	/// Position of the image centre in pixels.
@@ -71,6 +73,10 @@ pub struct Instance {
 	pub scale: (f32, f32),
 	/// Whether the instance is visible.
 	pub visible: bool,
+	/// The colour of the image.
+	pub colour: [f32; 4],
+	/// 'To Be Killed' - Whether this instance should be removed after the animation finished.
+	pub tbk: bool,
 }
 
 impl Instance {
@@ -81,7 +87,21 @@ impl Instance {
 			panic!("Image at path: {:?}, is not loaded", &state.image)).clone();
 		let centre_position = state.centre_position.map(|(x, y)| (x as f32, y as f32))
 			.unwrap_or_else(|| (image.width() as f32 / 2.0, image.height() as f32 / 2.0));
-		Instance { character, centre_position, image, position, scale: state.scale, visible: true }
+		Instance { animation: None, character, centre_position, colour: [1.0; 4], image, position, scale: state.scale, visible: true, tbk: false }
+	}
+
+	/// The instance progresses any animation it contains.
+	fn update(&mut self, ctx: &mut ggez::Context) {
+		if self.animation.is_some() {
+			let mut parameters = self.create_parameter();
+			match self.animation.as_mut().unwrap().update(&mut parameters, ctx) {
+				AnimationState::Continue => self.update_with_parameter(parameters),
+				AnimationState::Finished => {
+					self.animation.take().unwrap().finish(&mut parameters);
+					self.update_with_parameter(parameters);
+				}
+			}
+		}
 	}
 
 	/// Draws the instance to the screen.
@@ -95,8 +115,50 @@ impl Instance {
 		let draw_params = graphics::DrawParam::new()
 			.dest([position_x, position_y])
 			.offset([offset_x, offset_y])
-			.scale([scale_x, scale_y]);
+			.scale([scale_x, scale_y])
+			.color(self.colour.into());
 		graphics::draw(ctx, &self.image, draw_params)
+	}
+
+	/// Adds an animation onto the Instance.
+	/// If an animation is already present, it is finished before the new one is applied.
+	pub fn add_animation(&mut self, animation: Box<dyn Animation<InstanceParameter>>) {
+		if let Some(old_animation) = self.animation.replace(animation) {
+			let mut parameters = self.create_parameter();
+			old_animation.finish(&mut parameters);
+			self.update_with_parameter(parameters);
+		}
+	}
+
+	/// Finish any animation the Instance has.
+	pub fn finish_animation(&mut self) {
+		if let Some(animation) = self.animation.take() {
+			let mut parameters = self.create_parameter();
+			animation.finish(&mut parameters);
+			self.update_with_parameter(parameters);
+		}
+	}
+
+	/// Creates a parameter struct that will be given to the animation.
+	fn create_parameter(&self) -> InstanceParameter {
+		InstanceParameter {
+			centre_position: self.centre_position,
+			image: self.image.clone(),
+			position: self.position,
+			scale: self.scale,
+			visible: self.visible,
+			colour: self.colour,
+		}
+	}
+
+	/// Uses a parameter to update the Instance's own values.
+	fn update_with_parameter(&mut self, parameters: InstanceParameter) {
+		self.centre_position = parameters.centre_position;
+		self.image = parameters.image;
+		self.position = parameters.position;
+		self.scale = parameters.scale;
+		self.visible = parameters.visible;
+		self.colour = parameters.colour;
 	}
 }
 
@@ -105,6 +167,12 @@ impl Instance {
 pub struct Stage(pub HashMap<InstanceName, Instance>);
 
 impl Stage {
+	/// Runs all the animations that have been applied onto the instances.
+	pub fn update(&mut self, ctx: &mut ggez::Context) {
+		let Stage(stage) = self;
+		stage.values_mut().for_each(|instance| instance.update(ctx))
+	}
+
 	/// Draws all the instances it contains.
 	pub fn draw(&self, ctx: &mut ggez::Context) -> ggez::GameResult {
 		let Stage(stage) = self;
@@ -122,6 +190,15 @@ impl Stage {
 	pub fn remove(&mut self, name: &InstanceName) {
 		let Stage(stage) = self;
 		stage.remove(name);
+	}
+
+	/// Finishes any animations that are currently on the instances.
+	pub fn finish_animation(&mut self) {
+		let Stage(stage) = self;
+		stage.retain(|_, instance| {
+			instance.finish_animation();
+			!instance.tbk
+		})
 	}
 }
 
