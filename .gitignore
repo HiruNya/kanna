@@ -1,6 +1,7 @@
 Cargo.lock
 target/
 .idea
+.vscode
 examples/resources
 !examples/resources/*.txt
 !examples/resources/*.toml

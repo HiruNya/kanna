@@ -38,6 +38,7 @@ impl GameState {
 	}
 
 	pub fn advance(&mut self, ctx: &mut ggez::Context) {
+		self.render.stage.finish_animation();
 		match &mut self.render.text {
 			Some(text) if !text.is_finished() => text.finish(),
 			_ => loop {
@@ -74,6 +75,7 @@ impl event::EventHandler for GameState {
 		rate(ctx, self.settings.text_speed, |_|
 			Ok(self.render.text.as_mut().map(|text| text.step())))?;
 		self.state.sounds.retain(ggez::audio::SoundSource::playing);
+		self.render.stage.update(ctx);
 		Ok(())
 	}
 
