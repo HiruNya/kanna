@@ -66,7 +66,7 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			"change" => {
 				let instance = InstanceName(inline(lexer.string())?);
 				let state = StateName(inline(lexer.string())?);
-                let animation = animation(lexer, true)?;
+				let animation = animation(lexer, true)?;
 				script.commands.push(Command::Change(instance, state, animation));
 			}
 			"diverge" => {
@@ -80,7 +80,7 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			}
 			"position" => {
 				let instance = InstanceName(inline(lexer.string())?);
-				let position =  position(lexer)?;
+				let position = position(lexer)?;
 				let animation = animation(lexer, true)?;
 				script.commands.push(Command::Position(instance, position, animation));
 			}
@@ -88,13 +88,13 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 				let character = CharacterName(inline(lexer.string())?);
 				let state = StateName(inline(lexer.string())?);
 				let position = position(lexer)?;
-                let mut check_with = true;
-                let mut is_end = false;
-                let instance_name = match inline(lexer.token())? {
+				let mut check_with = true;
+				let mut is_end = false;
+				let instance_name = match inline(lexer.token())? {
 					None | Some(Token::Terminator) => {
 						is_end = true;
 						None
-					},
+					}
 					Some(Token::Identifier(ident)) if ident == "with" => {
 						check_with = false;
 						None
@@ -145,7 +145,7 @@ pub fn animation(lexer: &mut Lexer, check_with: bool) -> Result<Option<Animation
 	if check_with {
 		match inline(lexer.token())? {
 			None | Some(Token::Terminator) => return Ok(None),
-			Some(Token::Identifier(string)) if string == "with" => {},
+			Some(Token::Identifier(string)) if string == "with" => {}
 			Some(token) => return Err((ParserError::UnexpectedToken, token)),
 		}
 	}
@@ -153,7 +153,7 @@ pub fn animation(lexer: &mut Lexer, check_with: bool) -> Result<Option<Animation
 	inline(lexer.expect(Token::SquareOpen))?;
 	let mut arguments = Vec::new();
 	while let Some(token) = inline(lexer.token())? {
-		if token == Token::SquareClose { break }
+		if token == Token::SquareClose { break; }
 		if !arguments.is_empty() {
 			inline(lexer.expect(Token::ListSeparator))?
 		}
