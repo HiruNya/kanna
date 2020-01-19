@@ -125,6 +125,9 @@ impl<'a> Iterator for Lexer<'a> {
 					Some(_) => self.characters.next(),
 				};
 			},
+			'[' => Token::SquareBracketOpen,
+			']' => Token::SquareBracketClose,
+			'_' => Token::Underscore,
 			_ => match character.is_whitespace() {
 				true => return self.next(),
 				false => {

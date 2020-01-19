@@ -1,4 +1,5 @@
 use crate::{Command, FlagName, Label, lexer::Lexer, Script, Target};
+use crate::animation::AnimationDeclaration;
 use crate::character::{CharacterName, InstanceName, StateName};
 
 #[derive(Debug, PartialEq)]
@@ -10,7 +11,10 @@ pub enum Token {
 	ScopeClose,
 	BracketOpen,
 	BracketClose,
+	SquareBracketOpen,
+	SquareBracketClose,
 	ListSeparator,
+	Underscore,
 	Terminator,
 }
 
@@ -87,7 +91,35 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 						None | Some(Token::Terminator) => None,
 						Some(Token::String(string)) => Some(InstanceName(string)),
 						Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
-					}, None));
+					},
+					match inline(lexer.token())? {
+						None | Some(Token::Terminator) => None,
+						Some(Token::String(string)) if string == "with" => {
+							let name = match inline(lexer.token())? {
+								Some(Token::String(s)) => s,
+								Some(token) => return Err((ParserError::UnexpectedToken, token)),
+								None => return Err((ParserError::UnexpectedToken, Token::Terminator)),
+							};
+							match inline(lexer.token())? {
+								Some(Token::SquareBracketOpen) => {}
+                                Some(token) => return Err((ParserError::UnexpectedToken, token)),
+								None => return Err((ParserError::UnexpectedToken, Token::Terminator)),
+							}
+							let mut arguments = Vec::new();
+							while let Some(token) = inline(lexer.token())? {
+								let arg = match token {
+									Token::SquareBracketClose => break,
+                                    Token::Underscore => None,
+									Token::Numeric(n) => Some(n),
+                                    token => return Err((ParserError::UnexpectedToken, token)),
+								};
+								arguments.push(arg)
+							}
+							Some(AnimationDeclaration { name, arguments })
+						}
+						Some(token) => return Err((ParserError::UnexpectedToken, token)),
+					}
+				));
 			}
 			"if" => {
 				let flag = FlagName(inline(lexer.identifier())?);
