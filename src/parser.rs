@@ -88,17 +88,11 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 				let character = CharacterName(inline(lexer.string())?);
 				let state = StateName(inline(lexer.string())?);
 				let position = position(lexer)?;
-				let mut is_end = false;
 				let instance_name = match inline(lexer.peek())? {
-					None | Some(Token::Terminator) => {
-						is_end = true;
-						None
-					}
-					Some(Token::Identifier(identifier)) if identifier == "with" => None,
-					Some(Token::String(_)) => Some(InstanceName(inline(lexer.string())?)),
-					Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
+					Some(Token::String(_)) => Some(InstanceName(lexer.string().unwrap())),
+					_ => None,
 				};
-				let animation = if !is_end { animation(lexer)? } else { None };
+				let animation = animation(lexer)?;
 				script.commands.push(Command::Spawn(character, state, position, instance_name, animation));
 			}
 			"if" => {
@@ -143,6 +137,7 @@ pub fn animation(lexer: &mut Lexer) -> Result<Option<AnimationDeclaration>, (Par
 		Some(Token::Identifier(identifier)) if identifier == "with" => (),
 		Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
 	}
+
 	let name = inline(lexer.identifier())?;
 	inline(lexer.expect(Token::SquareOpen))?;
 	let mut arguments = Vec::new();
