@@ -66,7 +66,7 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			"change" => {
 				let instance = InstanceName(inline(lexer.string())?);
 				let state = StateName(inline(lexer.string())?);
-				let animation = animation(lexer, true)?;
+				let animation = animation(lexer)?;
 				script.commands.push(Command::Change(instance, state, animation));
 			}
 			"diverge" => {
@@ -81,28 +81,24 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			"position" => {
 				let instance = InstanceName(inline(lexer.string())?);
 				let position = position(lexer)?;
-				let animation = animation(lexer, true)?;
+				let animation = animation(lexer)?;
 				script.commands.push(Command::Position(instance, position, animation));
 			}
 			"spawn" => {
 				let character = CharacterName(inline(lexer.string())?);
 				let state = StateName(inline(lexer.string())?);
 				let position = position(lexer)?;
-				let mut expect_with = true;
 				let mut is_end = false;
-				let instance_name = match inline(lexer.token())? {
+				let instance_name = match inline(lexer.peek())? {
 					None | Some(Token::Terminator) => {
 						is_end = true;
 						None
 					}
-					Some(Token::Identifier(identifier)) if identifier == "with" => {
-						expect_with = false;
-						None
-					}
-					Some(Token::String(string)) => Some(InstanceName(string)),
+					Some(Token::Identifier(identifier)) if identifier == "with" => None,
+					Some(Token::String(_)) => Some(InstanceName(inline(lexer.string())?)),
 					Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
 				};
-				let animation = if !is_end { animation(lexer, expect_with)? } else { None };
+				let animation = if !is_end { animation(lexer)? } else { None };
 				script.commands.push(Command::Spawn(character, state, position, instance_name, animation));
 			}
 			"if" => {
@@ -112,9 +108,9 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			"pause" => script.commands.push(Command::Pause),
 			"flag" => script.commands.push(Command::Flag(FlagName(inline(lexer.identifier())?))),
 			"unflag" => script.commands.push(Command::Unflag(FlagName(inline(lexer.identifier())?))),
-			"kill" => script.commands.push(Command::Kill(InstanceName(inline(lexer.string())?), animation(lexer, true)?)),
-			"show" => script.commands.push(Command::Show(InstanceName(inline(lexer.string())?), animation(lexer, true)?)),
-			"hide" => script.commands.push(Command::Hide(InstanceName(inline(lexer.string())?), animation(lexer, true)?)),
+			"kill" => script.commands.push(Command::Kill(InstanceName(inline(lexer.string())?), animation(lexer)?)),
+			"show" => script.commands.push(Command::Show(InstanceName(inline(lexer.string())?), animation(lexer)?)),
+			"hide" => script.commands.push(Command::Hide(InstanceName(inline(lexer.string())?), animation(lexer)?)),
 			"stage" => script.commands.push(Command::Stage(inline(lexer.string())?.into())),
 			"jump" => script.commands.push(Command::Jump(Label(inline(lexer.identifier())?))),
 			"music" => script.commands.push(Command::Music(inline(lexer.string())?.into())),
@@ -141,13 +137,11 @@ pub fn inline<T>(result: Result<T, ParserError>) -> Result<T, (ParserError, Toke
 	result.map_err(|error| (error, Token::Terminator))
 }
 
-pub fn animation(lexer: &mut Lexer, expect_with: bool) -> Result<Option<AnimationDeclaration>, (ParserError, Token)> {
-	if expect_with {
-		match inline(lexer.token())? {
-			None | Some(Token::Terminator) => return Ok(None),
-			Some(Token::Identifier(identifier)) if identifier == "with" => (),
-			Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
-		}
+pub fn animation(lexer: &mut Lexer) -> Result<Option<AnimationDeclaration>, (ParserError, Token)> {
+	match inline(lexer.token())? {
+		None | Some(Token::Terminator) => return Ok(None),
+		Some(Token::Identifier(identifier)) if identifier == "with" => (),
+		Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
 	}
 	let name = inline(lexer.identifier())?;
 	inline(lexer.expect(Token::SquareOpen))?;
