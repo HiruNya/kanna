@@ -88,21 +88,21 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 				let character = CharacterName(inline(lexer.string())?);
 				let state = StateName(inline(lexer.string())?);
 				let position = position(lexer)?;
-				let mut check_with = true;
+				let mut expect_with = true;
 				let mut is_end = false;
 				let instance_name = match inline(lexer.token())? {
 					None | Some(Token::Terminator) => {
 						is_end = true;
 						None
 					}
-					Some(Token::Identifier(ident)) if ident == "with" => {
-						check_with = false;
+					Some(Token::Identifier(identifier)) if identifier == "with" => {
+						expect_with = false;
 						None
 					}
 					Some(Token::String(string)) => Some(InstanceName(string)),
 					Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
 				};
-				let animation = if !is_end { animation(lexer, check_with)? } else { None };
+				let animation = if !is_end { animation(lexer, expect_with)? } else { None };
 				script.commands.push(Command::Spawn(character, state, position, instance_name, animation));
 			}
 			"if" => {
@@ -141,12 +141,12 @@ pub fn inline<T>(result: Result<T, ParserError>) -> Result<T, (ParserError, Toke
 	result.map_err(|error| (error, Token::Terminator))
 }
 
-pub fn animation(lexer: &mut Lexer, check_with: bool) -> Result<Option<AnimationDeclaration>, (ParserError, Token)> {
-	if check_with {
+pub fn animation(lexer: &mut Lexer, expect_with: bool) -> Result<Option<AnimationDeclaration>, (ParserError, Token)> {
+	if expect_with {
 		match inline(lexer.token())? {
 			None | Some(Token::Terminator) => return Ok(None),
-			Some(Token::Identifier(string)) if string == "with" => {}
-			Some(token) => return Err((ParserError::UnexpectedToken, token)),
+			Some(Token::Identifier(identifier)) if identifier == "with" => (),
+			Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
 		}
 	}
 	let name = inline(lexer.identifier())?;
@@ -155,14 +155,14 @@ pub fn animation(lexer: &mut Lexer, check_with: bool) -> Result<Option<Animation
 	while let Some(token) = inline(lexer.token())? {
 		if token == Token::SquareClose { break; }
 		if !arguments.is_empty() {
-			inline(lexer.expect(Token::ListSeparator))?
+			inline(lexer.expect(Token::ListSeparator))?;
 		}
-		let arg = match token {
+
+		arguments.push(match token {
 			Token::Underscore => None,
-			Token::Numeric(n) => Some(n),
-			token => return Err((ParserError::UnexpectedToken, token)),
-		};
-		arguments.push(arg)
+			Token::Numeric(number) => Some(number),
+			_ => return Err((ParserError::UnexpectedToken, Token::Terminator)),
+		});
 	}
 	Ok(Some(AnimationDeclaration { name, arguments }))
 }

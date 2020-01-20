@@ -104,6 +104,9 @@ impl<'a> Iterator for Lexer<'a> {
 			'(' => Token::BracketOpen,
 			')' => Token::BracketClose,
 			',' => Token::ListSeparator,
+			'[' => Token::SquareOpen,
+			']' => Token::SquareClose,
+			'_' => Token::Underscore,
 			'\n' => {
 				self.new_line = true;
 				Token::Terminator
@@ -125,9 +128,6 @@ impl<'a> Iterator for Lexer<'a> {
 					Some(_) => self.characters.next(),
 				};
 			},
-			'[' => Token::SquareOpen,
-			']' => Token::SquareClose,
-			'_' => Token::Underscore,
 			_ => match character.is_whitespace() {
 				true => return self.next(),
 				false => {
