@@ -204,10 +204,10 @@ mod tests {
 
 	#[test]
 	fn lexer_peek() {
-		let mut lexer = Lexer::new(r#"with "string""#);
+		let mut lexer = Lexer::new("with \"string\"");
 		assert_eq!(lexer.peek(), Ok(Some(&Token::Identifier(String::from("with")))));
-		assert_eq!(lexer.identifier().unwrap(), String::from("with"));
-		assert_eq!(lexer.string().unwrap(), String::from("string"));
-		assert!(lexer.token().unwrap().is_none());
+		assert_eq!(lexer.identifier(), Ok(String::from("with")));
+		assert_eq!(lexer.string(), Ok(String::from("string")));
+		assert_eq!(lexer.token(), Ok(None));
 	}
 }

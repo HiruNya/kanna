@@ -92,6 +92,7 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 					Some(Token::String(_)) => Some(InstanceName(lexer.string().unwrap())),
 					_ => None,
 				};
+
 				let animation = animation(lexer)?;
 				script.commands.push(Command::Spawn(character, state, position, instance_name, animation));
 			}
