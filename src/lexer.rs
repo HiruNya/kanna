@@ -11,16 +11,25 @@ pub struct Lexer<'a> {
 	indentation: usize,
 	target_indent: usize,
 	new_line: bool,
+	peek: Option<Token>,
 }
 
 impl<'a> Lexer<'a> {
 	pub fn new(string: &'a str) -> Self {
 		let characters = string.char_indices().peekable();
-		Lexer { string, characters, indentation: 0, target_indent: 0, new_line: true }
+		Lexer { string, characters, indentation: 0, target_indent: 0, new_line: true, peek: None }
 	}
 
 	pub fn token(&mut self) -> Result<Option<Token>, ParserError> {
-		self.next().transpose()
+		match self.peek.take() {
+			Some(token) => Ok(Some(token)),
+			None => self.next().transpose(),
+		}
+	}
+
+	pub fn peek(&mut self) -> Result<Option<&Token>, ParserError> {
+		self.peek = self.token()?;
+		Ok(self.peek.as_ref())
 	}
 
 	pub fn identifier(&mut self) -> Result<String, ParserError> {
@@ -104,6 +113,9 @@ impl<'a> Iterator for Lexer<'a> {
 			'(' => Token::BracketOpen,
 			')' => Token::BracketClose,
 			',' => Token::ListSeparator,
+			'[' => Token::SquareOpen,
+			']' => Token::SquareClose,
+			'_' => Token::Underscore,
 			'\n' => {
 				self.new_line = true;
 				Token::Terminator
@@ -188,5 +200,14 @@ mod tests {
 		assert_eq!(Lexer::new("-1.0").next(), Some(Ok(Token::Numeric(-1.0))));
 		assert_eq!(&Lexer::new("(1.0,)").collect::<Vec<_>>(), &[Ok(Token::BracketOpen),
 			Ok(Token::Numeric(1.0)), Ok(Token::ListSeparator), Ok(Token::BracketClose)]);
+	}
+
+	#[test]
+	fn lexer_peek() {
+		let mut lexer = Lexer::new("with \"string\"");
+		assert_eq!(lexer.peek(), Ok(Some(&Token::Identifier(String::from("with")))));
+		assert_eq!(lexer.identifier(), Ok(String::from("with")));
+		assert_eq!(lexer.string(), Ok(String::from("string")));
+		assert_eq!(lexer.token(), Ok(None));
 	}
 }

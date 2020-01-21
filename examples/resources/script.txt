@@ -1,15 +1,15 @@
 "John Wick" "John Wick needs your credit card number and the three digits on the back so he can win this epic victory and take home the bread."
-spawn "Character" "Happy" (320, 240)
+spawn "Character" "Happy" (320, 240) with glide[]
 pause
-position "Character" (540, 240)
+position "Character" (540, 240) with glide[]
 pause
-hide "Character"
+hide "Character" with fade[]
 pause
-show "Character"
+show "Character" with glide[]
 pause
-change "Character" "Sad"
+change "Character" "Sad" with flip[]
 pause
-kill "Character"
+kill "Character" with fade[]
 pause
 "Bruh Moment" "Hi, this is a bruh moment."
 stage "/background.jpg"

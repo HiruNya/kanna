@@ -1,4 +1,5 @@
 use crate::{Command, FlagName, Label, lexer::Lexer, Script, Target};
+use crate::animation::AnimationDeclaration;
 use crate::character::{CharacterName, InstanceName, StateName};
 
 #[derive(Debug, PartialEq)]
@@ -10,7 +11,10 @@ pub enum Token {
 	ScopeClose,
 	BracketOpen,
 	BracketClose,
+	SquareOpen,
+	SquareClose,
 	ListSeparator,
+	Underscore,
 	Terminator,
 }
 
@@ -62,7 +66,8 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			"change" => {
 				let instance = InstanceName(inline(lexer.string())?);
 				let state = StateName(inline(lexer.string())?);
-				script.commands.push(Command::Change(instance, state, None));
+				let animation = animation(lexer)?;
+				script.commands.push(Command::Change(instance, state, animation));
 			}
 			"diverge" => {
 				inline(lexer.expect(Token::Terminator))?;
@@ -75,19 +80,21 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			}
 			"position" => {
 				let instance = InstanceName(inline(lexer.string())?);
-				script.commands.push(Command::Position(instance, position(lexer)?, None));
+				let position = position(lexer)?;
+				let animation = animation(lexer)?;
+				script.commands.push(Command::Position(instance, position, animation));
 			}
 			"spawn" => {
 				let character = CharacterName(inline(lexer.string())?);
 				let state = StateName(inline(lexer.string())?);
 				let position = position(lexer)?;
+				let instance_name = match inline(lexer.peek())? {
+					Some(Token::String(_)) => Some(InstanceName(lexer.string().unwrap())),
+					_ => None,
+				};
 
-				script.commands.push(Command::Spawn(character, state, position,
-					match inline(lexer.token())? {
-						None | Some(Token::Terminator) => None,
-						Some(Token::String(string)) => Some(InstanceName(string)),
-						Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
-					}, None));
+				let animation = animation(lexer)?;
+				script.commands.push(Command::Spawn(character, state, position, instance_name, animation));
 			}
 			"if" => {
 				let flag = FlagName(inline(lexer.identifier())?);
@@ -96,9 +103,9 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 			"pause" => script.commands.push(Command::Pause),
 			"flag" => script.commands.push(Command::Flag(FlagName(inline(lexer.identifier())?))),
 			"unflag" => script.commands.push(Command::Unflag(FlagName(inline(lexer.identifier())?))),
-			"kill" => script.commands.push(Command::Kill(InstanceName(inline(lexer.string())?), None)),
-			"show" => script.commands.push(Command::Show(InstanceName(inline(lexer.string())?), None)),
-			"hide" => script.commands.push(Command::Hide(InstanceName(inline(lexer.string())?), None)),
+			"kill" => script.commands.push(Command::Kill(InstanceName(inline(lexer.string())?), animation(lexer)?)),
+			"show" => script.commands.push(Command::Show(InstanceName(inline(lexer.string())?), animation(lexer)?)),
+			"hide" => script.commands.push(Command::Hide(InstanceName(inline(lexer.string())?), animation(lexer)?)),
 			"stage" => script.commands.push(Command::Stage(inline(lexer.string())?.into())),
 			"jump" => script.commands.push(Command::Jump(Label(inline(lexer.identifier())?))),
 			"music" => script.commands.push(Command::Music(inline(lexer.string())?.into())),
@@ -123,6 +130,31 @@ pub fn parse_command(lexer: &mut Lexer, script: &mut Script) -> Result<bool, (Pa
 
 pub fn inline<T>(result: Result<T, ParserError>) -> Result<T, (ParserError, Token)> {
 	result.map_err(|error| (error, Token::Terminator))
+}
+
+pub fn animation(lexer: &mut Lexer) -> Result<Option<AnimationDeclaration>, (ParserError, Token)> {
+	match inline(lexer.token())? {
+		None | Some(Token::Terminator) => return Ok(None),
+		Some(Token::Identifier(identifier)) if identifier == "with" => (),
+		Some(_) => return Err((ParserError::UnexpectedToken, Token::Terminator)),
+	}
+
+	let name = inline(lexer.identifier())?;
+	inline(lexer.expect(Token::SquareOpen))?;
+	let mut arguments = Vec::new();
+	while let Some(token) = inline(lexer.token())? {
+		if token == Token::SquareClose { break; }
+		if !arguments.is_empty() {
+			inline(lexer.expect(Token::ListSeparator))?;
+		}
+
+		arguments.push(match token {
+			Token::Underscore => None,
+			Token::Numeric(number) => Some(number),
+			_ => return Err((ParserError::UnexpectedToken, Token::Terminator)),
+		});
+	}
+	Ok(Some(AnimationDeclaration { name, arguments }))
 }
 
 pub fn position(lexer: &mut Lexer) -> Result<(f32, f32), (ParserError, Token)> {
